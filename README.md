@@ -1,9 +1,37 @@
 # LCWMD_Monitoring
+
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+
 Analysis of ten years of water quality monitoring data from the Long Creek Watershed Management District in Maine.
 
-This archive includes R scripts and related products analyzing aproximately ten years of awater quality monitoring data from the Long Creek Watershed Managmeent District (LCWMD).
+# Introduction
+This archive includes R scripts and related products analyzing approximately ten years of water quality monitoring data from the Long Creek Watershed Management District (LCWMD).
+
+for information on LCWMD, see [their web site](restorelongcreek.org).
 
 The District is a Maine quasi-municipal non-profit corporation that manages water quality in the Long Creek watershed on behalf of about 130 land owners.  
 
-The Long Creek Watershed, a bit over two square miles in area, is dominated by commercial land use. The Maine Mall is one of the largest land owners in the watershed, and it is surrounded by a range of commercial businesses, from medical offices, t ocarwashes.  About a third of the watershed in impervious surfaces like roads, parking lots, and rooftops.  Landowners with an acre or more of impervious area are required to get a Clean Water Act permit for stormwater discharges from their property.  THe LCWMD provides an alternative for landowners to working to receive an individual permit.  Landowners who elect to particiate in the The Long Creek Watershed Managment District receive a General Permit, in return for providing funding to the District, and facilitating the work of the district by permitting access to their propoerty for certain activities.
+The Long Creek Watershed, a bit over two square miles in area, is dominated by commercial land use. The Maine Mall is one of the largest land owners in the watershed, and it is surrounded by a range of commercial businesses, from medical offices, to car washes.  About a third of the watershed in impervious surfaces like roads, parking lots, and rooftops.  Landowners with an acre or more of impervious area are required to get a Clean Water Act permit for stormwater discharges from their property.  The LCWMD provides an alternative for landowners to working to receive an individual permit.  Landowners who elect to  in the The Long Creek Watershed Management District receive a General Permit, in return for providing funding to the District, and facilitating the work of the district by permitting access to their property for certain activities.
 
+
+Data analysis archive examining four years of coastal acidification data from Casco Bay, Maine. 
+
+# Statement of Purpose
+CBEP is committed to the ideal of open science.  Our State of the Bay data archives ensure the science underlying the 2020 State of the Bay report is documented and reproducible by others. The purpose of these archives is to release raw data and data analysis code whenever possible to allow others to review, critique, learn from, and build upon CBEP science. 
+
+# Archive Structure
+ CBEP 2020 State of the Bay data analysis repositories are divided into from two to four sub-folders.  All archives contain at least an "Original_Data" and a "Graphics" folder.  The other two folders are only included if strictly necessary. 
+
+- Original Data.  Original data, with a "DATA_SOURCES.md" or "READ ME.txt" file that documents data sources.
+
+**DATA IN THIS FOLDER IS AS ORIGINALLY PROVIDED OR ACCESSED.** 
+
+- Derived Data.  Data derived from the original raw data.  Includes documentation of data reorganization steps, either in the form of files (R notebooks, Excel files, etc.) that embody data transformations, or via another README.txt file.  
+- Analysis.  Contains one or more R Notebooks proceeding through the data analysis steps.  
+- Graphics.  Contains R Notebooks stepping through development of related graphics, and also raw copies of resulting graphics, usually in \*.png and \*.pdf formats.  These graphics may differ from graphics as they appear in final State of the Bay graphical layouts.  
+
+# Summary of Data Sources
+All data analyzed here is derived from data provided by GZA to LCWMD.  GZA has been teh primary monitoting, data management, and data analysis contractor for teh Long Creek Watershed Managamwent District 

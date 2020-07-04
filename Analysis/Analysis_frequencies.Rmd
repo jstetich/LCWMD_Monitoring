@@ -1,0 +1,116 @@
+---
+title: "Analysis of LCWMD 'Sonde'Contiunous' Data"
+output: html_notebook
+---
+# Import LIbraries  
+```{r}
+library(tidyverse)
+library(readr)
+library(vcd)      # contains contingency table plotting fxns -- NOT esential
+library(emmeans)  # Provides tools for calculating marginal means
+```
+
+# Import Data
+## Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  THe Memo is dated November 13, 2019
+File No. 09.0025977.02.
+```{r}
+# Read in data and drop the East Branch, where we have no data
+Site_IC_Data <- read_csv("Site IC Data.csv")  %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows and 
+Site_IC_Data <- Site_IC_Data%>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+```
+## Main Data
+```{r}
+sibfldnm    <- 'Derived Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+fn <- "Exceeds Data.csv"
+fpath <- file.path(sibling, fn)
+exceeds = read_csv(fpath, progress=FALSE) %>%
+  select(-X1) %>%
+  mutate(IC=Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])
+
+```
+
+
+# Initial Models
+```{r}
+the_lm <- lm(log(Chl_Median) ~ factor(Month) + Site + Year + log(Precip+1) + log(PPrecip+1), data = daily_medians)
+anova(the_lm)
+```
+
+
+```{r}
+plot(the_lm)
+```
+
+No major problems with that model, although a few major outliers, with low leverage.  If anything the model is slightly light tailed, with a slight tendency to curvature, which suggests an underfit model. All terms are statistically significant, which is interesting, because I fit year as a linear term only. 
+
+```{r}
+old <- options() 
+options(digits=3,scipen=2)
+summary(the_lm)
+options(old)
+rm(old)
+```
+So:
+1. Present-day precipitation supresses chlorides, but effect is much smaller than differences among sites.
+2. Previous day precipitation ALSO suppresses chloride levels, but not by as much.
+3. Chlorides have been INCREASING over the period of record
+4. Site S01 and S017 have similar Chloride levels.
+5.The highest chlorides are at site S03, followed by S01 and S17, S07, S05, and S06B.
+6. The highest chlorides are in the winter months, especially February and March.
+7. Chlorides are lowest in April, climbing again over the summer, and dropping in the fall.
+
+I'd like to extract fits for each of these terms in meaningful ways.  I need adjusted or LS means....
+Rather than fitting SITE as an independnet factor, it might be interesting to fit cummulative percent imperviousness, but that would take anested analysis.
+
+```{r}
+(month.emm <- emmeans(the_lm, ~Month, transform='response'))
+```
+```{r}
+plot(month.emm) +
+  ylab("Month")+
+  xlab('Chlorides (mg/l)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_minimal() +
+  coord_flip()
+```
+
+The following needs to be reordered to make it easier to interpret, so we need to chose an ordering of factors.
+```{r}
+site.emm <- emmeans(the_lm, ~Site, transform='response')
+plot(site.emm) +
+  ylab("Site")+
+  xlab('Chlorides (mg/l)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_minimal() +
+  coord_flip() 
+```
+
+```{r}
+(i <- emmeans(the_lm, ~1))
+```
+
+```{r}
+p <- exp(5.1 + (2010:2019 - 2014)*0.046983 )
+dates = as.Date(paste(as.character(2010:2019), '06', '01', sep="-"))
+df <- tibble(dates = dates, p=p)
+plt <- ggplot() + geom_point(data = daily_medians, aes(x=sdate, y=Chl_Median, color=Site)) +
+  geom_line(data =df, aes(x=dates, y=p), lwd = 2, color='blue') +
+  xlab("Date")+
+  ylab('Chlorides (mg/l)') +
+  ggtitle('Daily Medians') +
+  theme_minimal() +
+  scale_y_log10()
+plt
+```
+
+Note that because some sites were not sampled in earlier years, this slope may be misleading.
+
+SO, it is easy to see that SEASONAL patterns and differences among SITES are much mor important than changes over time in salinity. 

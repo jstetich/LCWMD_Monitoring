@@ -1,0 +1,15 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+README.html
+Derived_Data/DATA_NOTES.html
+Original_Data/DATA_SOURCES.html
+**/drafts
+**/sources
+
+*.nb.html
+
+**/GZA_R_Script
+**/Raw_EQuIS_Data

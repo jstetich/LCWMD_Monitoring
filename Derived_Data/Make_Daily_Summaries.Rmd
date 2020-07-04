@@ -1,0 +1,233 @@
+---
+title: "Create Daily Summaries"
+output: html_notebook
+---
+
+# Load Libraries
+```{r}
+library(readr)
+library(lubridate)
+library(tidyverse)
+```
+
+# Load Sonde Data
+```{r message=FALSE}
+sonde_data <- read_csv("Sonde Data.csv", 
+     col_types = cols(D = col_number(),
+                      Press = col_number(), 
+                      pH = col_number()),
+     progress=FALSE) %>%
+  select(-X1)
+```
+
+## Calculate daily summaries
+```{r}
+suppressWarnings(daily_data <- sonde_data %>%
+  mutate(sdate = as.Date(floor_date(DT, unit='day'))) %>%
+  select(-DT, -Press, -Precip) %>%        # These items have a lot of missing values, slowing processing
+  group_by(Site, sdate) %>%
+  summarize_all(list(Min=~min(., na.rm=TRUE),
+                Max=~max(., na.rm=TRUE),
+                Mean=~mean(., na.rm=TRUE),
+                Median=~median(., na.rm=TRUE),
+                SD=~sd(., na.rm=TRUE),
+                Iqr=~IQR(., na.rm=TRUE),
+                n=~sum(! is.na(.)))) %>%
+  mutate(Year = year(sdate)) %>%
+  mutate(Month = month(sdate)))
+           
+```
+
+## Plot to confirm that did what we want....
+```{r}
+plt <- daily_data %>% select(Site,sdate, DO_Median, Year) %>%
+  ggplot(aes(sdate,DO_Median)) + geom_line(aes(color=Site, group=Year)) +
+  theme_minimal()
+plt
+
+```
+
+# Load Weather Data
+```{r}
+sibfldnm    <- 'Original Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+fn <- "Portland Jetport 2009-2019.csv"
+fpath <- file.path(sibling, fn)
+
+weather_data <- read_csv(fpath, 
+ col_types = cols(AWNDattr = col_skip(), 
+        FMTM = col_skip(), FMTMattr = col_skip(), 
+        PGTM = col_skip(), PGTMattr = col_skip(), 
+        PRCPattr = col_character(), SNOWattr = col_skip(), 
+        SNWD = col_skip(), SNWDattr = col_skip(),
+        TAVG = col_number(), TAVGattr = col_character(), 
+        TMIN = col_number(), TMINattr = col_character(), 
+        TMAX = col_number(), TMAXattr = col_character(), 
+        WDF2 = col_skip(), WDF2attr = col_skip(), 
+        WDF5 = col_skip(), WDF5attr = col_skip(), 
+        WESD = col_skip(), WESDattr = col_skip(), 
+        WSF2 = col_skip(), WSF2attr = col_skip(), 
+        WSF5 = col_skip(), WSF5attr = col_skip(), 
+        WT01 = col_skip(), WT01attr = col_skip(), 
+        WT02 = col_skip(), WT02attr = col_skip(), 
+        WT03 = col_skip(), WT03attr = col_skip(), 
+        WT05 = col_skip(), WT05attr = col_skip(), 
+        WT07 = col_skip(), WT07attr = col_skip(), 
+        WT08 = col_skip(), WT08attr = col_skip(), 
+        WT09 = col_skip(), WT09attr = col_skip(), 
+        WT13 = col_skip(), WT13attr = col_skip(), 
+        WT14 = col_skip(), WT14attr = col_skip(), 
+        WT16 = col_skip(), WT16attr = col_skip(), 
+        WT18 = col_skip(), WT18attr = col_skip(), 
+        station = col_skip())) %>%
+  select( ! starts_with('W')) %>%
+  rename(sdate = date)
+summary(weather_data)
+```
+
+Note:  I appear to have downloaded the data in metric units, which is the default in my downloading program.  Note that some units are in tenths of units.
+```{r}
+plt <- weather_data %>%
+  select(sdate, PRCP) %>%
+  ggplot(aes(sdate, PRCP)) + geom_point() +
+  theme_minimal()
+plt
+
+```
+## Address trace precipitation
+Trace rainfall is included in the database by including a measurement value of zero for precipitation, and including the value "T" as the first element in PRCPattr.
+```{r echo=FALSE}
+m <- min(weather_data$PRCP[weather_data$PRCP>0], na.rm=TRUE)
+nn <- sum(weather_data$PRCP==m, na.rm=TRUE)
+
+l <- weather_data %>%
+  select(PRCP, PRCPattr) %>%
+  mutate(is_trace = substr(PRCPattr,1,1)=='T') %>%
+  filter(is_trace) %>%
+  pull(PRCP) %>%
+  length()
+```
+A total of `r nn` samples have the minimum value of measured rainfall of `r m/10` mm.  (Reading the metadata, that is really be a number that corresponds to converting 1/100th of an inch to mm $0.254mm = 2.54(cm/inch)(10mm/cm) /100$, and rounding).  A higher frequency of observations, `r l` of them, were recoded as having trace amounts of rainfall.
+
+It is not obvious how to incorporate trace rainfall into analyses, or even whether it is important.  Here we create a flag for trace rainfall and add it to weather_data.  That way, later we can chose to incorporate it into analyses or not.
+```{r}
+weather_data <- weather_data %>%
+  mutate(is_trace = substr(PRCPattr,1,1)=='T')
+```
+
+# Combine data
+## Using Match
+This solution is not ideal, because it is memory inefficient. We duplicate identical rainfall numbers, which are properties of DAYS, for each site within days.
+
+```{r}
+length(daily_data$sdate)
+```
+
+
+
+```{r}
+dailyprecip <- weather_data$PRCP[match(daily_data$sdate, weather_data$sdate)]
+previousprecip <- c(NA, dailyprecip[1:length(dailyprecip)-1])
+dailymaxt <- weather_data$TMAX[match(daily_data$sdate, weather_data$sdate)]
+```
+
+## Graphic to test if that worked.
+```{r}
+plt <- ggplot(daily_data, aes(y=DO_Median)) + 
+  geom_point(aes(x=dailymaxt, color=Site), alpha=0.25) +
+  geom_smooth(aes(x=dailymaxt), method='lm', formula= y~poly(x,3)) +
+  theme_minimal()
+  
+plt
+```
+Note:  That related median DO to atmospheric daily maximum temps. Note low DO values for site SO5 turning up at higher temperatures.  Note also the low DO at site s3 under cooler temperatures....
+
+## Actually Combine data
+```{r eval=FALSE}
+daily_data <- daily_data %>%
+  mutate(Precip = dailyprecip) %>%
+  mutate(PPrecip =  previousprecip) %>%
+  mutate(MaxT = dailymaxt)
+
+```
+O.K.  Not sure why that failed.... Especially because this works the old fashioned way:
+```{r}
+daily_data$Precip <- dailyprecip
+daily_data$PPrecip <- previousprecip
+daily_data$MaxT <- dailymaxt
+rm(dailyprecip, previousprecip, dailymaxt)
+```
+## Graphic to check....
+```{r}
+plt <- ggplot(daily_data, aes(x=Precip, y=Chl_Median)) + 
+  geom_point(aes(color=Site), alpha=0.25) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_smooth(method='lm') +
+  theme_minimal()
+
+plt
+```
+
+That shows what is almost certainly a significant, but weak correlation. Salt is diluted by rainfall.  Note the clear vertical separation by sites.  Site provides a much clearer signal than does precipitation alone.  We could continue with this graphical analysis, but this calls out for a hierarchical model.
+
+# Export data
+```{r}
+write.csv(daily_data, 'Daily Data.csv')
+```
+
+# Calculate Daily Exceedences
+## Thresholds
+Here we convert daily data to "dates during which "fail" or "Did not Fail" for each water quality standard or threshold
+
+We have only a few criteria to look at:
+
+*Dissolved oxygen:*
+Maine's B}Class B standards call for dissolved oxygen above 7 mg/l, with percent saturation above 75%.  The Class C Standards, which apply to almost all of Long Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 6.5 mg/l. In addition, the thirty day average dissolved oxygen must stay above 6.5 mg/l.  
+```{r}
+tClassCDO <- 5      # Units are mg/l or PPM
+tClassCPctSat <- 60
+tClassBDO <- 7
+tClassBPctSat <- 75
+```
+
+
+*Chloride:*
+Maine uses established thresholds for both chronic and acute exposure to chloride. These are the "CCC and CMC" standards for chloride in freshwater. (06-096 CMR 584). These terms are defined in a footnote as follows:
+
+>The Criteria Maximum Concentration (CMC) is an estimate of the highest concentration of a material in surface water to which an aquatic community can be exposed briefly without resulting in an unacceptable effect. The Criterion Continuous Concentration (CCC) is an estimate of the highest concentration of a material in surface water to which an aquatic community can be exposed indefinitely without resulting in an unacceptable effect.   
+
+The relevant thresholds are:
+```{r}
+tChlCCC <- 230  # units are mg/l or PPM
+tChlCMC <- 860
+```
+
+*Temperature:*
+There are no criteria for maximum stream temperature, but we can back into thresholds based on research on thermal tolerance of brook trout in streams.  A study from Michigan and Wisconsin, showed that trout are found in streams with daily mean water temperatures as high as  25.3°C, but only if the period of exceedance of that daily average temperature is short -- only one day. Similarly, the one day daily maximum temperature above which trout were not found was 27.6°C.
+
+>*Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). "Field‐Based Estimates of Thermal Tolerance Limits for Trout: Incorporating Exposure Time and Temperature Fluctuation." Transactions of the American Fisheries Society 136(2): 365-374.*
+
+```{r}
+tMaxT <- 27.6   #Celsius
+tAvgT <- 25.3
+```
+## Calculate Exceedences
+```{r}
+exceedence_data <- daily_data %>%
+  select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
+  mutate(ClassCDO = DO_Min>=tClassCDO, ClassBDO = DO_Min>=tClassBDO,
+         ClassC_PctSat = PctSat_Min>tClassCPctSat, ClassB_PctSat = PctSat_Min>tClassBPctSat,
+         ClassCBoth = ClassCDO & ClassC_PctSat,
+         ClassBBoth = ClassBDO & ClassB_PctSat,
+         ChlCCC = Chl_Max<=tChlCCC, ChlCMC = Chl_Max <= tChlCMC,
+         MaxT = T_Max <= tMaxT, AvgT = T_Mean <= tAvgT) %>%
+  select(-DO_Min, -PctSat_Min, -Chl_Max, -T_Max, -T_Mean)
+
+```
+# Export data
+```{r}
+write.csv(exceedence_data, 'Exceeds Data.csv')
+```

@@ -1,0 +1,707 @@
+---
+title: "Testing Models for Time Series Analysis of LCWMD Continuous Data"
+output: html_notebook
+---
+# Introduction
+This R Notebook explores various models for anlyzing chloride levels in Long Creek. My principal goal is NOT to predict future values, but to assess the contribution of certain (time varying) predictors to explaining the pattern in the time series. 
+
+This notebook looks principally at chlorides, and a single site, to explore model structure that may work.  It is worth pointing out that I explored dozens of prior model types before settling on the structure I'm using here. Here I am especially interested in looking at whether there have been long-term trends in water quality over the duration of the LCWMD monitoring program.
+
+The key insight is that we can use generalized least squares or generalized additive models with an auto regressive error term. This motivates most of the models explored here.
+
+In this notebook, I explore time series methods to  assess temporal trends in the LCWMD data. Simple linear models of the LCWMD data are based on the assumption that observations are independent, however, we know both on principal and from working with the data, that the data are both auto-correlated and cross-correlated in complex ways.
+
+One challenge to analyzing the original data from LCWMD was INCOMPLETE, in the sense that it was missing data from certain days or times. The time series methods in base R assume complete data in terms of how the data is laid out -- even if many values are NA.  The time series is assumed to be a sequence of observations equally spaced.
+
+Several alternative formulations of the data are available in the "Derived Data" folder that facilitates different types of models.
+
+One solution is to use the zoo package, which extends time series methods in base R to indexed series, where the index can be any value that supports ordering. Or you can use the xts package, which extends zoo.
+
+I  ended up constructing complete (or nearly complete) timeseries as an alternative. After exploring base TS methods and zoo methods, I have fallen back on linear models, with lags and weighted sums of recent rainfall calculated in advance.   
+
+# Import Libraries  
+```{r}
+library(tidyverse)
+library(readr)
+library(emmeans)   # Provides tools for calculating marginal means
+library(ggeffects) # provides access functions to emmeans that return tidy tibbles and facilitate plots
+# library(ggeffects)  # an alternate effects/predict emmeans tool for ggplot graphics
+#library(RColorBrewer)  # provides some nice color paletts for graphics.
+library(nlme)      # includes the gls function, which simplifies some weighted LS
+#library(chron)    # simplifies management of date and time objects
+library(lubridate) # simplifies management of date and time objects
+library(zoo)       # provides utilities for working with indexed time series
+# library(xts)
+#library(tseries)
+# library(forecast)  # additional utilities for TS models
+#library(lmtest)    # Includes a "durbin watson test" for autocorrelated order
+                   # Alternative would be package car.
+library(mgcv)      # One of two common libraries for general additive models.
+                   # Function gamm allows autocorrelation.
+                   # plot allows examination of GAM fit components
+library(broom)    # Allows ready conversion to tidy tibbles
+```
+
+# Import Data
+## Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated November 13, 2019
+File No. 09.0025977.02.
+
+#Utility Function
+Here we create a couple of functions to calculate weighted sums of recent precipitation.  We only use expweights, below.
+```{r}
+linweights <- function(x, rate=.1) {
+  stopifnot(length(x)==10)
+  out = 0
+  for (i in seq_len(length(x)-1)) {out<-out+x[i]*(rate)*(i)}
+  return(out)
+}
+
+
+expweights <- function(x, rate=(4/5)) {
+  stopifnot(length(x)==10)
+  out = 0
+  for (i in seq_len(length(x)-1)) {out<-out+x[i]*(rate)^(10-i)}
+  return(out)
+}
+
+check <- c(1,0,0,0,0,0,0,0,0,1)
+rollapply(check, 10, linweights)
+rollapply(check, 10, expweights)
+
+check=c(0,0,0,0,0,0,0,0,0, 1,0,0,0,0,0,0,0,0,0,0)
+rollapply(check, 10, linweights)
+rollapply(check, 10, expweights)
+```
+
+
+# Import Data
+## Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated November 13, 2019, File No. 09.0025977.02.
+
+```{r}
+# Read in data and drop the East Branch, where we have no data
+
+sibfldnm    <- 'Derived Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+fn <- "Site IC Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%    mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
+```
+
+## Main Data
+Read in the data from the Derived Data folder.
+
+Note that I filter out data from 2019 because that is only a partial year, which might affect estimation of things like seasonal trends.  We could add it back in, but with care....
+```{r}
+sibfldnm    <- 'Derived Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+fn <- "Full Data.csv"
+fpath <- file.path(sibling, fn)
+
+full_data <- read_csv(fpath, 
+    col_types = cols(DOY = col_integer(), 
+        D_Median = col_double(), Precip = col_integer(), 
+        X1 = col_skip(), Year = col_integer(), 
+        Yearf = col_skip(), lD_Median = col_double())) %>%
+
+  mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
+  mutate(Month = factor(Month, levels = month.abb)) %>%
+  mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
+  mutate(Yearf = factor(Year))
+rm(Site_IC_Data)
+rm(fn, fpath, parent, sibling, sibfldnm)
+```
+
+# Simple Plot of Chloride Levels
+```{r}
+ggplot(full_data, aes(sdate, Chl_Median)) + geom_point(aes(color=Site), alpha=0.25) +
+  geom_smooth(aes(group = Yearf), se=FALSE,
+              method = 'gam',
+              formula = y~s(x, k=3)) +  # span is essentially arbitrary....
+  ylab('Chloride (mg/l)') +
+  xlab('Date') +
+  ggtitle('Daily Medians') +
+  theme_minimal()
+```
+
+Note that the smooth fits here really don't make much sense, since the data accross multiple sites are combined, but it's useful for assessing whether the data is in the format we want.  Still note the general downward trend in most years.
+
+# Reduced data
+```{r}
+the_data <- full_data %>% filter(Site=='S17')
+```
+
+# Explore autocorrelations structure
+Now that we have a zoo, we can look at autocorrelation and crosscorrelaitons stucture.  But since I pull data out of the zoo objects using coredata(), this is the same as runing the analysis on a non-zoo object.  So these analysis don't handle seasonal patterns or winter data gaps correctly. These are preliminary analyses only.
+```{r}
+oldpar <- par(mfrow=c(2,3), mar = c(1,2,3,1))
+acf(the_data$Precip, main = 'Precip', na.action= na.pass)
+acf(the_data$D_Median, main='Depth', lag.max=100, na.action= na.pass)
+acf(the_data$Chl_Median, main='Est. Chloride (mg/l)', lag.max=100, na.action=na.pass)
+pacf(the_data$Precip, main = 'Precip', na.action= na.pass)
+pacf(the_data$D_Median, main='Depth', lag.max=100, na.action= na.pass)
+pacf(the_data$Chl_Median, main='Est. Chloride (mg/l)', lag.max=100, na.action=na.pass)
+par(oldpar)
+```
+So, this suggests first order autoregressive process for the Chloride and depth metrics. Precipitation would probably be better fit with a first order moving average process.  Prior work has shown similar patterns looking at log-transformed values.
+
+# Explore cross correlation structure
+```{r}
+oldpar <- par(mfrow=c(1,2), mar = c(1,2,3,1))
+a <- ccf(the_data$Precip, the_data$Chl_Median,
+    main = 'Precipitation by Chloride',
+    ylim = c(-.6,0.1), 
+    na.action= na.pass)
+ccf(the_data$D_Median, the_data$Chl_Median,
+    main = 'Depth by Chloride',
+    ylim = c(-.6, 0.1),
+    na.action= na.pass)
+par(oldpar)
+```
+```{r}
+a[-10:2]
+```
+
+VERY helpful. What that shows is that chlorides are negatively correlated with rainfall.  The connection is only moderate with rainfall on the day of the observation, but stronger with rainfall from several days before.  We see significant correlations going back about 10 days.
+
+Chlorides are also strongly (negatively) correlated with depth, with a  peak at a lag of zero.
+
+# Log Linear MOdels
+These models are technically incorrect, as they have autocorrelated errors, but they allow us to select the right autocorrelations structure as we move to more sophisticated models.  While we're at ti, I'm interested in comparing whether it is better to treat seasonality by day or by month.
+
+(Prior work showed that analysis of log transformed data better conforms to model assumptions.)
+## Polynomial by Day of Year
+```{r}
+Chl_llm_1 <- lm(log(Chl_Median) ~ Yearf + lPrecip +
+                  wlPrecip + lD_Median +
+                  poly(DOY,5), data = the_data,
+                  na.action=na.omit)
+summary(Chl_llm_1)
+```
+
+## Formal analysis of lags
+```{r}
+Chl_llm_1.1 <- lm(log(Chl_Median) ~ Yearf + lPrecip +
+                  lag1 + lag2 + lag3 + lag4 + lag5 +
+                  lag6 + lag7 + lag8+ lag9 + lag10 +
+                  lD_Median +
+                  poly(DOY,5), data = the_data,
+                  na.action=na.omit)
+summary(Chl_llm_1.1)
+```
+So, fitting the lags actually provides a slightly LESS strong fit than fitting a weighted sum of recent rainfall.  Also note that in this case, the eight, nine, and ten day lags are not significant in this model. (That varies with the specific model).
+
+## Strictly Periodic (sine and cosine) fit.
+```{r}
+Chl_llm_2 <- lm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
+                  sin(2*pi*DOY/365) + cos(2*pi*DOY/365) +
+                  sin(2*pi*DOY/(2*365)) + cos(2*pi*DOY/(2*365)),
+                  data = the_data, na.action=na.omit)
+summary(Chl_llm_2)
+```
+
+## Genealized Linear Model Fit
+```{r}
+Chl_llm_3 <- gam(log(Chl_Median) ~ Yearf + lPrecip +
+                  wlPrecip + lD_Median +
+                  s(DOY, k=6), data = the_data,   # k here is arbitrary, to get a fairly simple curve
+                  na.action=na.omit)
+summary(Chl_llm_3)
+```
+
+## Seasons by Month, not Day of Year
+```{r}
+Chl_llm_4 <- lm(log(Chl_Median) ~ Yearf + lPrecip +
+                  wlPrecip + lD_Median +
+                  Month, data = the_data,
+                  na.action=na.omit)
+summary(Chl_llm_4)
+```
+
+```{r}
+anova(Chl_llm_2, Chl_llm_3, Chl_llm_1, Chl_llm_4)
+```
+
+```{r}
+AIC( Chl_llm_2, Chl_llm_3, Chl_llm_1,  Chl_llm_4)
+```
+So, the BEST model depends on the criteria you use, but there is little difference between the models in terms of residual sums of squares. The GAM model can be made better by allowing higher degrees of freedom for the seasonal curve.
+
+The GAM fit needs to be tuned to avoid generating a very wiggly line.  Here, we've fit a GAM that has about the same degrees of freedom as the polynomial fit. What did that smooth look like?  (Note that the degree of wiggliness will change as we move towards better models).
+```{r}
+plot(Chl_llm_3)
+```
+
+## Autocorrelation of residuals
+This is a partially incorrect analysis, beacause ACF and PACF don't handle missing values correctly.Still, given the richness of our data, it is adequate for our current question.
+```{r}
+oldpar <- par(mfrow=c(1,2),mar = c(1,2,3,2))
+
+r <- resid(Chl_llm_3)
+
+acf(r, na.action=na.omit, main= 'Model Residuals')
+pacf(r, na.action=na.omit, main= 'Model Residuals')
+par<-oldpar
+```
+
+```{r}
+a<-acf(r, na.action=na.omit, main= 'Model Residuals', plot=FALSE)
+(theautocor <- a$acf[2])
+```
+So we can use a single auto regressive model of degree one, with a correlation near 0.8.
+
+# Generalized Least Squares
+```{r}
+the_gls <- gls(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
+                 poly(DOY,5), data = the_data, na.action=na.omit,
+                 correlation=corAR1(theautocor))
+summary(the_gls)
+```
+The correlations among parameters suggest the interdependence of the Year factors, which is expected. Negative correlations among depth and the precipitation variables also makes sense.  We expect depth to be correlated with precipitation variables, so the negative correlation among the parametes is expeted.
+
+```{r} 
+anova(the_gls)
+```
+Why does the summary suggest the precipitation factor is insignificant, but it has a highly significant F test in the ANOVA?
+
+
+## Diagnostic Plots
+```{r}
+plot(the_gls)
+qqnorm(the_gls, abline=c(0,1))
+plot(the_gls, Yearf~resid(., type='p'))
+plot(the_gls, resid(., type='p')~DOY)
+plot(the_gls, resid(., type='p')~lPrecip)
+```
+Extreme residuals are a problem.  They mostly correspond to low values observed in 2018 over a period of a few days. They may affect our models, but probably not excessively.  But we should consider measures of statistical significance with care.
+
+# Generalized Linear Models
+The gamm() function in the mcgv package handles GAMs with an ar1 autocorrelation quite handily.  There are a large number of potential model structures that we might want to use here, so I explore many of them here.
+
+We use Method=ML because the fixed components of the models change, so REML would generate nonsense.  After selecting a model, we should refit the model with REML to improve performance.
+
+I start by fitting simple models with only a single GAM fit term -- for the Day of the Year.  This gives me a way to explore other components of model structure.
+
+Note that as we move towards a GAM fit with an AR1 term, the optimal smoothed fit for Day of Year changes.
+
+
+# Basic Model Sequence
+These are a basic series of (nested) interaction models, which we can compare by ANOVA or AIC.  Here we are trying to select the preferred interaction structure among our precipitation related predictor variables.
+```{r}
+gam_fit_1 <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
+                s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_2 <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip * lD_Median +
+                s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_3 <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
+                    lPrecip:lD_Median +
+                    wlPrecip:lD_Median +
+                s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_4 <- gamm(log(Chl_Median) ~ Yearf + (lPrecip + wlPrecip + lD_Median)^2 +
+                s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+  
+gam_fit_5 <- gamm(log(Chl_Median) ~ Yearf + lPrecip * wlPrecip * lD_Median +
+                s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+```
+
+Comparing these models, it is clear that interaction terms help with model fitting. That is probably not unreasonable, since today's rainfall could well interact with yesterday's rainfall or the current water depth in complex ways.
+
+```{r}
+anova(gam_fit_1$lme, gam_fit_2$lme, gam_fit_3$lme, gam_fit_4$lme, gam_fit_5$lme)
+
+```
+Models 3,4, and 5 provide very similar (not statistically significant) differences in performence by AIC or Log likelihood.  
+
+So, from a practical point of view, given our goals (to maximize detection of differences among years), any of the last three models are functionally similar.  I like model 3, because of its parsimony.
+
+Note that having done a better job of fitting the flow characteristics, the GAM term comes back as a linear function of time of year.
+
+```{r} 
+gam_fit_3.d <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
+                    lPrecip:lD_Median +
+                    wlPrecip:lD_Median +
+                    s(DOY, bs='cr'),    # This is for cubic regression splines
+                data = the_data, na.action=na.omit, method='ML',
+                correlation=corAR1(0.8))
+```
+
+```{r}
+anova(gam_fit_3$lme, gam_fit_3.d$lme)
+```
+
+So, a cubic spline fit is nearly as well to the "optimal" thin plate spine (the default).
+```{r}
+oldpar <- par(mfrow=c(1,2))
+plot(gam_fit_3$gam, main="Thin  Plate Spline")
+plot(gam_fit_3.d$gam, main="Cubic Regression Spline")
+par(oldpar)
+```
+The cubic spline term is INTELLECTUALLY more satisfying, since a literal linear functioin with time of year is unlikely, but it does not really provide a statistically better fit. (It's only slightly better.)
+
+Looking at the cubic b spline, one can see why a linear fit (using the thin plate splines) would be adequate.
+
+```{r}
+p2 <- predict(gam_fit_1$gam)
+formula(gam_fit_1$gam)
+p3 <- predict(gam_fit_3$gam)
+formula(gam_fit_3$gam)
+p4 <- predict(gam_fit_4$gam)
+formula(gam_fit_4$gam)
+p5 <- predict(gam_fit_5$gam)
+formula(gam_fit_5$gam)
+p6 <- predict(gam_fit_3.d$gam)  # Cubic Spline.
+formula(gam_fit_3.d$gam)
+```
+
+```{r}
+cor(cbind(p2,p3,p4,p5,p6))
+```
+So, all models are providing predictions within less than one percent of each other.
+
+# Refining the Model
+I continue fitting models based on Model 3, testing additional possible GAM components in place of linear and interaction terms.
+```{r}
+gam_fit_3.1 <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + s(lD_Median) +
+                    lPrecip:lD_Median +
+                    wlPrecip:lD_Median +
+                    s(DOY),
+                data = the_data, na.action=na.omit, method='ML',
+                correlation=corAR1(0.8))
+
+gam_fit_3.2 <- gamm(log(Chl_Median) ~ Yearf +
+                      s(lPrecip,lD_Median)+
+                      s(wlPrecip, lD_Median) +
+                      s(DOY),
+                 data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_3.3 <- gamm(log(Chl_Median) ~ Yearf + wlPrecip + s(lD_Median)+ 
+                      s(lPrecip,lD_Median) +
+                      wlPrecip:lD_Median +
+                      s(DOY),
+                 data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_3.4 <- gamm(log(Chl_Median) ~ Yearf + wlPrecip + lPrecip + s(lD_Median)+ 
+                      wlPrecip:lD_Median +
+                      s(DOY),
+                 data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+
+gam_fit_3.5 <- gamm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + s(lD_Median)+ 
+                      lPrecip:lD_Median +
+                      s(DOY),
+                 data = the_data, na.action=na.omit, method='ML',
+                 correlation=corAR1(0.8))
+```
+
+
+```{r}
+anova(gam_fit_3$lme, gam_fit_3.5$lme, gam_fit_3.4$lme, gam_fit_3.2$lme, gam_fit_3.1$lme, gam_fit_3.3$lme)
+```
+So, model 3.3 is by far the best, but I am unhappy with it as a general model.  It feels too arbitrary to apply to all sites without careful checking of model fits.   The model feels contrived to me. Why model precip and depth with spline interaction, but model weighted precip and depth with a linear interaction?  i feel like they should both be treated similarly.  This may be idiosyncratic to this site.
+
+So, I think the best "general" structure for a model (to apply to other sites as well) is either 3.1 or 3.2
+
+# Model Checksr
+```{r}
+gam.check(gam_fit_3.2$gam)
+```
+So, looking at residuals, we again have very heavy tails.  That is slightly problematic.  We are lucky that the high residual terms do not appear to have high leverage.
+
+# Compare three Candidate General Models
+SO, our best model -- for this site -- is 3.2, but 3.1 is similar, and has some parsimony value. We might also want to revisit the question of forcing a cubic spline fit to day of the year
+
+
+## Compare Predictions of "Best" models
+```{r}
+p2 <- predict(gam_fit_3$gam)
+formula(gam_fit_3$gam)
+p3 <- predict(gam_fit_3.1$gam)
+formula(gam_fit_3.1$gam)
+p4 <- predict(gam_fit_3.2$gam)
+formula(gam_fit_3.2$gam)
+p5 <- predict(gam_fit_3.3$gam)
+formula(gam_fit_3.3$gam)
+```
+
+```{r}
+cor(cbind(p2, p3, p4, p5))
+```
+All of our predictions are highly correlated with each other, so it can make little difference which model we choose.
+
+
+```{r}
+plot(p3~p5, main='GAM 3.1 DOY and Depth Compared to "Best" Model')
+abline(0,1)
+```
+```{r}
+plot(p4~p5, main='GAM 3.2 DOY and Precip*Depth Compared to "Best" Model')
+abline(0,1)
+```
+I feel like we need to go with Model 3.2, even though I don't really understand the two way spline fits.
+
+```{r}
+plot(gam_fit_3.1$gam)
+```
+```{r}
+plot(gam_fit_3.2$gam)
+```
+I am, however, a LOT more comfortable fitting traditional interaction terms, as in Model 3.1  However, it's odd to include an interaction term without including both main effects.
+
+
+# Conclusion:
+Best general model is 3.2.
+
+# Refit model using REML
+```{r}
+gam_fit <- gamm(log(Chl_Median) ~ Yearf +
+                      s(lPrecip,lD_Median)+
+                      s(wlPrecip, lD_Median) +
+                      s(DOY),
+                 data = the_data, na.action=na.omit,
+                 correlation=corAR1(0.8))
+```
+
+# And a simpler GLS model
+I add a quadratic term for the lD_Median to allow for curvature of the response, like what we soo in teh GAM.
+```{r}
+gls_fit <- gls(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + I(lD_Median^2) +
+                    lPrecip:lD_Median +
+                    wlPrecip:lD_Median +
+                    DOY,
+                data = the_data, na.action=na.omit,
+                correlation=corAR1(0.8))
+```
+
+
+#Extracting Adjusted Means
+We use the emmeans package to adjust predictions for other covariates.  However, the package is not behaving similarly for bothe the GAMM and GLS fits.
+
+## Simplest call for the GAMM fit.
+Here we need to provide infromation to allow emmeans to extract values. 
+```{r}
+(f <- gam_fit$gam$formula)
+t1 <- emmeans(gam_fit, ~Yearf, type='response',
+             call = quote(gamm(f, data = the_data)))
+t1
+
+t2 <- emmeans(gam_fit, ~Yearf, type='response', cov.reduce=median,
+             call = quote(gamm(f, data = the_data)))
+t2
+```
+What were the reference values in each case?  Note, we could also create our own function. for defineing the grid sumamry values.
+```{r}
+ref_grid(gam_fit, ~Yearf, type='response',
+             call = quote(gamm(f, data = the_data)))
+ref_grid(gam_fit, ~Yearf, type='response', cov.reduce =  median,
+             call = quote(gamm(f, data = the_data)))
+```
+So, the median values are slightly "drier" and the estimated chloride levels are slightly higher. The 2015th day of the year is August 2nd or 3rd.
+
+Or the alternative, offering only the data, which generates slightly different estimates..  WHY?
+```{r}
+t3 <- emmeans(gam_fit, ~Yearf, data = the_data, type = 'response')
+str(t3)
+t3
+```
+But notice that neither appears to recognize the log transform on the response. After some testing, I believe that this is a consequence of using mgcv::gamm.  Apparently, while emmeans handles GAMMs, it loses information about the transforms.  So, we need to provide that information manually.
+
+# Convert Adjusted Means to Response scale (mg/l Chlorides)
+```{r}
+tt <- update(t2, tran = "log")
+tidy(tt)
+```
+
+# Some Graphics Alternatives
+ggemmeans is VERY slow.  And I can't specify type = 'response' because ggemmeans usesthe type= parameter for somethign different.
+```{r}
+plot(tt, horizontal = FALSE, comparisons=TRUE) + 
+  xlab('Year')+ ylab('Chlorides (mg/l)') + ggtitle('Adjusted Geometric Means') +
+  theme_minimal()
+```
+
+```{r}
+pwpm(tt)
+pwpp(tt)
+```
+
+
+
+## An Alternative Model
+Just to show that for our purposes, the simpler GLS  analysis is  similar. 
+```{r}
+t3<- emmeans(gls_fit, ~Yearf, mode = "appx-satterthwaite", type = 'response')
+tidy(t3)
+
+```
+Note that  the degrees of freedom are caclulated very differently, but the stabdard errors and confidence intervals are not very different.
+
+
+
+
+# Decomposing model results
+
+We want to decompose the results into:
+0. The Raw data
+1. A YEAR BY YEAR component
+2. A DAY OF YEAR component
+2. A WEATHER component, including rainfall and flow
+4. An ERROR Term.
+
+The challenge here is that we want to use the ggplot facet system, which requires a tidy dataset
+
+I think the way to do this is to fit sequentially simpler models, on the residuals of prior models.
+
+We have just completed the Year analysis
+
+
+## Raw Data
+Note thate I cneter the data before I run the analyses....
+```{r}
+plotdat <- the_data %>%
+  select(sdate, Chl_Median, lPrecip, wlPrecip, lD_Median, Yearf, DOY) %>%
+  filter(complete.cases(.))  %>%    # We don't need he missing values anymore.
+  select(sdate, Chl_Median) %>%
+  mutate(kind = 'Observed',
+         value = scale(log(Chl_Median), center=TRUE, scale=FALSE)) %>%
+  select(-Chl_Median)
+```
+
+
+## Year by Year
+```{r}
+(q <- summary(t2))
+```
+
+```{r}
+tmp <- the_data %>%
+  select(sdate, Chl_Median, lPrecip, wlPrecip, lD_Median, Yearf, DOY) %>%
+  mutate(lChl_Median = scale(log(Chl_Median), center=TRUE, scale=FALSE)) %>%
+  mutate(YrAdjust = q[match(Yearf, q$Yearf),2]) %>%
+  mutate(aChl_Median = lChl_Median-YrAdjust)
+  
+tmp2 <- tmp %>%
+  mutate(kind = 'Year',
+         value=  YrAdjust)
+
+plotdat <- plotdat %>% add_row(sdate=tmp2$sdate,
+                               kind=tmp2$kind,
+                               value=tmp2$value)
+```
+
+
+# Day of year....
+The way we do that is to fit another model, to the already adjusted chloride data, extract teh emmeans, and continue.
+Day of year terms Should be a nice function 
+```{r}
+doy_fit <- gamm(aChl_Median ~ 
+                      s(lPrecip,lD_Median) +
+                      s(wlPrecip, lD_Median) +
+                      s(DOY),
+                data = tmp, na.action=na.omit,
+                correlation=corAR1(0.8))
+```
+
+```{r}
+t5 <- emmeans(doy_fit, ~DOY, type='response', cov.keep = 'DOY', cov.reduce=median,
+             call = quote(gamm(f, data = the_data)))
+plot(t5, horizontal=FALSE)
+```
+
+
+
+
+```{r}
+q <- summary(t5)
+
+tmp <- tmp %>%
+  mutate(DOYAdjust = q[match(DOY, q$DOY),2]) %>%
+  mutate(aChl_Median = aChl_Median-DOYAdjust)
+  
+tmp2 <- tmp %>%
+  mutate(kind = 'DOY',
+         value=  DOYAdjust)
+
+
+plotdat <- plotdat %>% add_row(sdate=tmp2$sdate,
+                               kind=tmp2$kind,
+                               value=tmp2$value)
+```
+## The Weather Term
+```{r}
+weather_fit <- gamm(aChl_Median ~ 
+                      s(lPrecip,lD_Median) +
+                      s(wlPrecip, lD_Median),
+                 data = tmp, na.action=na.omit,
+                 correlation=corAR1(0.8))
+```
+
+
+The following almost works -- but it needs to be matched up with dates correctly.
+```{r}
+q = predict(weather_fit$gam, newdata = tmp)
+r = tmp$aChl_Median-q
+
+tmp2 <- tmp %>%
+  mutate(kind = 'Weather',
+         value=  q)
+
+tmp3 <- tmp %>%
+  mutate(kind='Error',
+         value = r)
+```
+
+```{r}
+plotdat <- plotdat %>%
+  add_row(sdate=tmp2$sdate,
+            kind=tmp2$kind,
+             value=tmp2$value) %>%
+    add_row(sdate=tmp3$sdate,
+            kind=tmp3$kind,
+             value=tmp3$value) %>%
+  mutate(value = exp(value)) %>%
+  mutate(kind = factor(kind, levels = c('Observed', 'Year', 'DOY', 'Weather', 'Error')))
+
+```
+
+
+
+```{r, fig.height = 7, fig.width = 5}
+ggplot(plotdat, aes(sdate,value, color=kind)) + geom_point(size = 0.2) +
+  facet_wrap(~kind, nrow=5, scales = 'fixed') +
+  ylab('Chlorides (mg/l)') +
+  xlab('Date') +
+  ggtitle('Adjusted Geometric Means') +
+  theme_minimal()
+```
+
+ 
