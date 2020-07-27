@@ -1,41 +1,40 @@
 ---
-title: "Time Series Analysis of LCWMD Continuous looking at Daily Medians"
-output: html_notebook
+title: "Generate Complete Timeseries, with Weighted Sums of Precipitation"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership"
+date: "Revised 7/21/2020"
+output:
+  github_document:
+    toc: true
+    fig_width: 7
+    fig_height: 5
 ---
+
+<img
+  src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+  style="position:absolute;top:10px;right:50px;" />
+
 # Introduction
-Simple linear models of the LCWMD data that observations are independent, however, we know both on principal and from working with the data, that  the different time auto-correlated in complex ways.
+Simple linear models of the LCWMD data assume that observations are independent, however, we know both on principal and from working with the data, that  the different timeseries are auto- and cross-correlated in complex ways.
 
 One challenge to analyzing these data in R is that the time series we are working with are INCOMPLETE, in the sense that we are missing data from certain days or times. The time series methods in base R assume complete data in terms of how the data is laid out -- even if many values are NA.  The time series is assumed to be a sequence of observations equally spaced.
 
-The solution is to use the zoo package, which extends time series methods in base R to indexed series, where the index can be any value that supports ordering.
+One solution is to use the zoo package (or related xts) which extends time series methods in base R to indexed series, where the index can be any value that supports ordering.  That has its own drawbacks in terms of generation of complex linear models. Our interest here is not principally in time series analysis, but in understanding long-term trends against the backdrop of data with strong seasonal and even diurnal patterns and autocorrelated errors.
 
-Our principal goal is NOT to predict future values, but to assess the contribution of certain (time varying) predictors to explaining the pattern in the time series.
-
-Here I am especially interested in looking at whether there have been any long-term trends in water quality over the duration of the LCWMD monitoring program.
+Here we calculate data that contains  variables that capture some of the autocorrelation and crosscorrelation structure of these data through lag terms and weighted sums of recent observations.  These  allow us to use generalized least squares (GLS) and generalized additive models (GAMMS) to probe long-term trends.
 
 # Import Libraries  
-```{r}
+```{r load_library}
 library(tidyverse)
 library(readr)
-#library(emmeans)  # Provides tools for calculating marginal means
-#library(RColorBrewer)  # provides some nice color paletts for graphics.
-#library(nlme)    # includes the gls function, which simplifies some weighted LS
-#library(chron)  # simplifies management of date and time objects
 library(lubridate) # simplifies management of date and time objects
-library(zoo)     # provides utilities for working with indexed time series
-#library(xts)
-#library(tseries)
-# library(forecast)  # additional utilities for TS models
-#library(lmtest)  # Includes a "durbin watson test" for autocorrelated order
-                  # Alternative would be package car.
-#library(mgcv)     # One of two common libraries for general additive models.
-                  # Included function gamm allows autocorrelation.
-                  # plot llows examination of GAM fit components
+library(zoo)       # provides utilities for working with indexed time series
 ```
 
-#Utility Function
-Here we create a couple of functions to calculate weighted sums of recent precipitation.
-```{r}
+# Weighting Functions
+Here we create two functions to calculate weighted sums of recent precipitation.  These two functions are used with package zoo's rollapply function to calculate a recent precipitation index.  Each index looks at rainfall from a ten day period.  The exponential weighting function emphasizes rainfall of the last day or two more strongly than a linear weighting does. The default rate parameters here were  derived from analysis of cross correlation structure. They could be tuned as part of a model, but at the  cost of substantially greater model complexity.
+
+
+```{r def_weighted_sum_fxns}
 linweights <- function(x, rate=.1) {
   stopifnot(length(x)==10)
   out = 0
@@ -43,31 +42,63 @@ linweights <- function(x, rate=.1) {
   return(out)
 }
 
-
 expweights <- function(x, rate=(4/5)) {
   stopifnot(length(x)==10)
   out = 0
   for (i in seq_len(length(x)-1)) {out<-out+x[i]*(rate)^(10-i)}
   return(out)
 }
+```
 
+
+## Testing Weighting Functions
+The checks confirm that the weighting functions are working as intended. 
+
+*  The  single sequence of ten values should produce a single value under rollapply. 
+
+-    The FIRST value of 1 represents one inch of rainfall nine days ago.  The linear function
+     should assign a weight of $1.9 \times 0.1 = 0.1$  to that value.  The exponential decay function
+     should weight it at $(\frac{4}{5})^9 = 0.1342$. 
+
+-    The LAST value of 1 represents rainfall today.  Since this is a weighted sum of previous rainfall,
+     it should receive a weight of zero under both weighting functions. 
+
+*  The sequence of 20 values with a 1 in the middle calculates eleven weighted sums.
+-    The first set of ten sums includes rainfall only in the last day -- which represents
+     "today", and thus receives a weight of zero. 
+     
+-    Each value after that shows how the weighting drops as rainfall falls further into the past. 
+
+```{r check_weights}
 check <- c(1,0,0,0,0,0,0,0,0,1)
 rollapply(check, 10, linweights)
 rollapply(check, 10, expweights)
 
 check=c(0,0,0,0,0,0,0,0,0, 1,0,0,0,0,0,0,0,0,0,0)
-rollapply(check, 10, linweights)
-rollapply(check, 10, expweights)
+(w1 <- rollapply(check, 10, linweights))
+(w2 <- rollapply(check, 10, expweights))
+plot(0:10, w1, type = 'l', xlab="Days Since Rain", ylab = "Effective Weights")
+lines(0:10, w2, col = 'blue')
+rm(w1, w2, check)
 ```
-
 
 # Import Data
 ## Data on Sites and Impervious Cover
 These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated November 13, 2019
-File No. 09.0025977.02.
-```{r}
+File No. 09.0025977.02.  We calculated cumulative upstream acres, impervious acres, and imperviousness based on data in that table.
+```{r load_IC_data }
 # Read in data and drop the East Branch, where we have no data
-Site_IC_Data <- read_csv("Site IC Data.csv") %>%
+Site_IC_Data <- read_csv("Site_IC_Data.csv", col_types=cols(
+  Site = col_character(),
+  Subwatershed = col_character(),
+  Area_ac = col_double(),
+  IC_ac = col_double(),
+  CumArea_ac = col_double(),
+  CumIC_ac = col_double(),
+  PctIC = col_character(),
+  CumPctIC = col_character()
+)
+                         ) %>%
   filter(Site != "--") 
 
 # Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
@@ -75,19 +106,19 @@ Site_IC_Data <- Site_IC_Data %>%
   mutate(Site = factor(Site, levels = Site_IC_Data$Site))
 
 # Finally, convert percent covers to numeric values
+# By default, the percents are read in incorrectly.
 Site_IC_Data <- Site_IC_Data %>%
-  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%    mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
-Site_IC_Data
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+knitr::kable(Site_IC_Data, col.names = c('Site',                         'Subwatershed',
+                                         'Area (acres)',                 'Impervious Area (acres)',
+                                         'Cummulative Area (Acres)',     'Cummulative Impervious Area (Acres)',
+                                         'Local Percent Imperviousness', 'Cummulative Percent Imperviousness'))
 ```
 
-mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)]))
-
 ## Main Data
-Read in the data from the Derived Data folder.
-
-Note that I filter out data from 2019 because that is only a partial year, which might affect estimation of things like seasonal trends.  We could add it back in, but with care....
-```{r}
-fpath <- "Daily Data.csv"
+Read in the data from the Derived Data folder.  Arrange by date within each site. We filter out data from 2019 because we only have data from a portion of that year.  Including that data in subsequent analyses may bias estimation of annual averages and seasonal trends.
+```{r load_main_data}
+fpath <- "Daily_Data.csv"
 
 daily_medians <- read_csv(fpath, progress=FALSE, 
                           col_types = cols(
@@ -99,26 +130,27 @@ daily_medians <- read_csv(fpath, progress=FALSE,
   select(-ends_with('Min'), -ends_with('Max'), -ends_with('Mean'),
          -ends_with('Iqr'), -ends_with('SD'), -ends_with('_n')) %>%
   mutate(Site = factor(Site)) %>%
+  arrange(Site, sdate) %>%
   filter(Year<2019)    
 ```
 
-```{r}
+```{r test_plot}
 ggplot(daily_medians, aes(sdate, Chl_Median, color=Site)) + 
   geom_point(alpha=.25) + 
   theme_minimal() +
   facet_wrap(~Site)
 ```
-Is there really only one year's worth of data from S06B?  And it looks like there is exactly one point in 2017 - -which is almost certainly a coding error.
+Is there really only one year's worth of data from S06B?  And it looks like there is exactly one point in 2017 -- which is almost certainly a coding error.
 
 
 ## Weather Data
-We downloaded weather data.  Here we simplify that data 
-```{r}
-sibfldnm    <- 'Original Data'
+We downloaded weather data.  Here we simplify that data somewhat.  We simplify it more in the next step.
+```{r load_weather_data}
+sibfldnm    <- 'Original_Data'
 parent      <- dirname(getwd())
 sibling     <- file.path(parent,sibfldnm)
 
-fn <- "Portland Jetport 2009-2019.csv"
+fn <- "Portland_Jetport_2009-2019.csv"
 fpath <- file.path(sibling, fn)
 
 weather_data <- read_csv(fpath, 
@@ -144,28 +176,16 @@ weather_data <- read_csv(fpath,
 summary(weather_data)
 ```
 
-Check that AvgT are true average temperatures.  Older NWS data often uses the midpoint between minimum and maximum temperatures.  If that were the case, the differences will be symmetrical.
-```{r}
-weather_data %>%
-  select(sdate, MinT, AvgT, MaxT) %>%
-  mutate(d1 = MaxT-AvgT, d2 = AvgT-MinT, dd = d1-d2) %>%
-  ggplot(aes(sdate, dd)) + geom_line()
-
-```
-
-# Construct a Data frame
-```{r}
-weather_data_Complete <- weather_data%>%
+### Add Logged and Weighted Precipitation Values
+```{r add_sums_and_lags}
+weather_data_Complete <- weather_data %>%
   arrange(sdate) %>%
-  mutate(Precip = zoo(Precip,sdate)) %>%
-  mutate(MaxT = zoo(MaxT,sdate)) %>%
   mutate(Year = year(sdate)) %>%
-  mutate(Yearf = factor(Year)) %>%
   mutate(Month = month(sdate)) %>%
   mutate(Month = factor(Month, labels = month.abb)) %>%
   mutate(DOY = as.numeric(format(sdate, '%j'))) %>%
 
-  select(sdate, Year, Yearf, Month, DOY, Precip) %>%
+  select(sdate, Year, Month, DOY, Precip, MaxT) %>%
   mutate(lPrecip = log1p(Precip)) %>%
   mutate(wPrecip = rollapply(Precip, 10,
                              expweights,
@@ -173,21 +193,21 @@ weather_data_Complete <- weather_data%>%
   mutate(wlPrecip = rollapply(lPrecip, 10,
                              expweights,
                              align="right", fill=NA)) %>%
-  mutate_at(vars(Precip, lPrecip, wPrecip, wlPrecip), ~coredata(.)) %>%
-  mutate(lag1 = lag(lPrecip,n=1),  # Note that this implicitly uses dplyr::lag()
-         lag2 = lag(lPrecip,n=2),  # And also that this is not yet correct,
-         lag3 = lag(lPrecip,n=3),  # Since it does not create missing values
-         lag4 = lag(lPrecip,n=4),  # When there was a period of mising data in
-         lag5 = lag(lPrecip,n=5),  # The zoo object.
-         lag6 = lag(lPrecip,n=6),
-         lag7 = lag(lPrecip,n=7),
-         lag8 = lag(lPrecip,n=8),
-         lag9 = lag(lPrecip,n=9),
-         lag10 = lag(lPrecip,n=10))
+  mutate_at(vars(Precip, lPrecip, wPrecip, wlPrecip), ~coredata(.)) #%>%
+  # mutate(lag1 = lag(lPrecip,n=1),  # Note that this implicitly uses dplyr::lag()
+  #        lag2 = lag(lPrecip,n=2),  # And also that this is not yet fully correct,
+  #        lag3 = lag(lPrecip,n=3),  # Since it does not create missing values
+  #        lag4 = lag(lPrecip,n=4),  # When there was a period of missing data in
+  #        lag5 = lag(lPrecip,n=5),  # The zoo object.
+  #        lag6 = lag(lPrecip,n=6),
+  #        lag7 = lag(lPrecip,n=7),
+  #        lag8 = lag(lPrecip,n=8),
+  #        lag9 = lag(lPrecip,n=9),
+  #        lag10 = lag(lPrecip,n=10))
 
 ```
 
-```{r}
+```{r test_plot_Weighted_sum}
 tmp <- weather_data_Complete[weather_data_Complete$Year==2015,]
 plot(Precip~sdate, data = tmp)
 points(wPrecip~sdate, data = tmp, col='Red')
@@ -195,43 +215,30 @@ rm(tmp)
 ```
 Note that after each major rain event, the weighted sum drops, which is what we needed.
 
-# Export Weather data with lags and weighted sums.
-```{r}
+### Export Weather data with weighted sums
+```{r save_weather_data}
 write.csv(weather_data_Complete, 'Weather Data.csv')
 ```
 
-# Combine with the observational data
-The challenge we have combining data is that we need to add observations site by site. Nevertheless, we may want to assemble a combined data set for modelling purposes.
+## Combine Weather and observational data
+The challenge we have combining data is that we need to add observations site by site and correctly identify missing data. Since missing data can occur independently at each site, we need to ensure we generate 
+
+Nevertheless, we may want to assemble a combined data set for modeling purposes.
 
 The sites we are interested in include:
-```{r echo=FALSE}
+```{r sites_list, echo=FALSE}
 cat(as.character((Site_IC_Data$Site)))
 ```
 
-Our goal is a "complete" regular time series for each site, with missing values where appropriate.  WE need to be able to do two things with this data:
+Our goal is a "complete" regular time series for each site, with missing values where appropriate.  We need to be able to do two things with this data:
 (1) Pull complete time series for each site or a subset of variables by subsetting or pivot_wider
-(2) Analyse the full dataset in GAMs or via GLS, with an AR1 error structure
+(2) Analyze the full dataset in GAMs or via GLS, with an AR1 error structure.
 
-# Example:  site S07
-```{r}
-S07_data_part <- daily_medians %>%
-  filter(Site=='S07') %>%
-  select(1:9)
-S07_data <- weather_data_Complete %>%
-  mutate(Chl_Median = S07_data_part$Chl_Median[match(sdate,S07_data_part$sdate)],
-         D_Median   = S07_data_part$D_Median[match(sdate,S07_data_part$sdate)],
-         lD_Median = log1p(D_Median),
-         DO_Median  = S07_data_part$DO_Median[match(sdate,S07_data_part$sdate)],
-         PctSat_Median = S07_data_part$PctSat_Median[match(sdate,S07_data_part$sdate)],
-         pH_Median = S07_data_part$pH_Median[match(sdate,S07_data_part$sdate)],
-         spCond_Median = S07_data_part$SpCond_Median[match(sdate,S07_data_part$sdate)],
-         T_Median = S07_data_part$T_Median[match(sdate,S07_data_part$sdate)])
-rm(S07_data_part)
-```
+With a little code, we can traverse each site and assemble a megadataset.  We need to use match to make sure we line things up correctly within each site, honoring all missing values, etc.  We only need the first nine data columns of daily_medians because the weather data already contains date and weather data.
 
-# Assemble The Complete Data
-So, lets automate that to assemble a megadataset.
-```{r}
+By joining the "daily_data" site by site onto data derived from the weather data ( which includes all dates in the target period), we implicitly create a "complete" data record for each site.  (It would probably be possible to run each step more compactly using left_join() instead of match()).
+
+```{r assemble_all_sites}
 l <- list()
 
 for (site in Site_IC_Data$Site)
@@ -253,32 +260,22 @@ for (site in Site_IC_Data$Site)
 }
 
 all_data <- bind_rows(l, .id="Site")
-```
-
-# Export Complete Data
-```{r}
-write.csv(all_data, 'Complete Data.csv')
+rm(l, d_data, d_part)
 ```
 
 
+### Removing missing values
+That produces the "full" regular time series.  But it wastes a LOT of memory because it contains so many NAs. Since each site was assembled separately, based on the full 10 year weather record, I have missing values any time a particular SITE lacks data.  Since several sites have only a few years of data, for those sites, we've got a lot of pointless data rows.
 
-That produces the "full" regular time series.  But it wastes a LOT of memory because if contains so many NAs.
+The obvious thing to do would be to just filter out rows with NAs in the measured variables, but that won't work.  We  want to retain one NA BEFORE the first row of data in each contiguous block of data, so we can correctly use an AR1 error structure in our modeling.  If we are using an AR1 model, the  "first" observation in a block of data will implicitly look to the prior row (not prior time index) to grab the "preceding" value.  So we need to make sure that value is NA when it needs to be, and not the LAST observation from the prior block of real data in sequence in the data.
 
-
-
-
-# Removing missing values
-Now, that monster data set has a LOT of NAs.  Since each site was assembled separately, based on the full 10 year weather record, I have missing values any time a particular SITE lacks data.  Since several sites have only a few years of data, for those sites, we've got a lot of pointless data rows.
-
-The obvious thing to do would be to just filter out rows with NAs in the measured variables, but that won't work in this setting.  We  want to retain one NA BEFORE the first row of data in each contiguous block of data, so we can correctly use an AR1 error structure in our modelling.  If we are using an AR1 model, the  "first" observation in a block of data will implicitly look to the prior row (not prior time index) to grab the "preceding" value.  So we need to make sure that value is NA when it needs to be, and not the LAST observation from the prior data block.
-
-(Note:  This assumes we don't deed a more complicated error structure, like an AR2 or AR3 to model temperature and DO, which we have not tested yet.  But if we can solve this for an AR1 model, it will be trivial to solve it for an AR2 of AR3 model.) 
+(Note:  This assumes we don't deed a more complicated error structure, like an AR2 or AR3.) 
 
 
 The basic idea is to create a variable that is lagged appropriately, so I know whether the NEXT row contains data, Then I can retain rows that EITHER contain data, or for which the NEXT row contains data.
 
-The dplyr::lead() function can "look forward" one row to see if we have a missing data or not.  So we can combine several to generate a
-```{r}
+The dplyr::lead() function can "look forward" one row to see if we have a missing data or not.  So we can combine several to figure out how soon we will have data.  What we want here is a test to see if we have ANY valid data in the next few samples.
+```{r remove_useless_NAs}
 final_data <- all_data %>%
   mutate(hasdata = ! (is.na(Chl_Median) & is.na(DO_Median) & is.na(D_Median))) %>% 
   mutate(nexthasdata = ! (is.na(lead(Chl_Median)) & is.na(lead(DO_Median)) & is.na(lead(D_Median)))) %>%
@@ -290,8 +287,8 @@ final_data <- all_data %>%
 
 ```
 
-# Output the megadataset
-```{r}
-write.csv(final_data, 'Full Data.csv')
+# Output the Final Combined Data Set
+```{r save_full_data}
+write.csv(final_data, 'Full_Data.csv')
 ```
 
