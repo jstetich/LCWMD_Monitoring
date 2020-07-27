@@ -217,7 +217,7 @@ Note that after each major rain event, the weighted sum drops, which is what we 
 
 ### Export Weather data with weighted sums
 ```{r save_weather_data}
-write.csv(weather_data_Complete, 'Weather Data.csv')
+write.csv(weather_data_Complete, 'Weather_Data.csv')
 ```
 
 ## Combine Weather and observational data
