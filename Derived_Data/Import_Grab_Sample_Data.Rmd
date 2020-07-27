@@ -1,0 +1,267 @@
+---
+title: "Untitled"
+author:  "Curtis C. Bohlen, Casco Bay Estuary Partnership"
+date: "7/22/2020"
+output:
+  github_document:
+    toc: true
+    fig_width: 7
+    fig_height: 5
+---
+
+<img
+  src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+  style="position:absolute;top:10px;right:50px;" />
+
+
+# Load Libraries
+```{r load_libraries}
+library(readxl)
+library(readr)
+library(lubridate)
+library(tidyverse)
+```
+
+
+# Load Grab Sample Data
+One again, the Excel files provided by GZA are hard to work with. They are very large, with many associated tabs. This makes them slow to load.  Our first attempt was to simplify these files by pooling them into separate tabs in an Excel Spreadsheet using an Excel Macro. it worked, but generated a huge file.  What became clear is that the Excel Files contian BOTH sonde and grab sample data, so we need to do some filter to simplify and reduce the data.
+
+
+```{r list_files}
+sibfldnm    <- 'Original_Data'
+subfldnm    <- 'Data_Package_to_LCWMD'
+subsubfldnm <- 'Data_by_Sites_Types'
+
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+targetfldr <- file.path(sibling, subfldnm, subsubfldnm)
+fns <- list.files(targetfldr)
+(fns <- fns[nchar(fns)<=9])
+
+```
+
+
+## Check File Structure COnsistency
+Now, lets check to see if the other Excel Spreadsheets contain the same data columns (and int he same order....)
+
+
+### Check Sheet Names
+```{r sheet_names}
+for (fn in fns) {
+  cat(fn)
+  cat('\n')
+  fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+  sheets <- excel_sheets(fpath)
+  print(sheets)
+  cat('\n')
+}
+
+```
+In all cases, the first sheet contains the data we want. This is in part because I copied the SO1.xls and removed numerous graphics.
+
+### Check How first several rows are organized
+
+I thought this would run fast, since I am only looking at the first few lines,
+but it still took a HUGE amount of time, mostly with the first file, which
+has many associated tabs of graphics.  It also closed down my secondary monitor,
+crashed Zoom, etc.  This is almost certainly a memory issue.  It appears that 
+read_excel() is reading in the whole file before importing only the first few
+lines.
+
+```{r}
+for (fn in fns) {
+  cat(fn)
+  cat('\n')
+  fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+  toplines <- read_excel(fpath, sheet=1, col_names = as.character(101:105), range = 'A1:F5', col_types = 'text')
+  cat(toplines)
+  cat('\n')
+}
+
+```
+
+
+
+The following takes a LONG time.  This suggest that if I can derive a consistent approach to managing these data, I should write it as a script and allow it to run in the background.  A substantial amount of the trouble may be 
+```{r test_data, cache = TRUE}
+fn = fns[1]
+fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+
+test_data <- read_excel(fpath, sheet = 1, skip=2)
+```
+
+That's a BIG dataframe, accounting for `r prettyNum(object.size(test_data),big.mark = ",")' bytes.  Ouch.
+
+```{r}
+cat(prettyNum(object.size(test_data), big.mark = ','))
+```
+
+
+```{r}
+names(test_data)
+```
+
+Notes:
+1.  Non-standard names (with spaces, parentheses, etc.)
+2.  A wide range of parameters, alphabetical, not sorted by categories
+3.  What was the 'Updated Task Code'?
+4.  Several Parameters are entered in multiple ways
+    *  "CHLORIDE (AS Cl)"
+    *  "CHLORIDE (AS CL)"
+    *  "Chloride (Chlorine)"
+    *  "Chloride, Calculated"
+    *  "Dissolved Oxygen"
+    *  "DISSOLVED OXYGEN"
+    *  "DISSOLVED OXYGEN SAT PERCENT"
+    *  "Dissolved oxygen saturation"
+    *  "Dissolved Oxygen Saturation"
+5.  No data specifying the sample site.
+
+```{r}
+xtabs(~`Task Code` + `Updated Task Code`, data = test_data , addNA = TRUE)
+```
+So, the Updated Task Code converted a large number of "Sonde Data" to "Pressure" codes.  So we can filter on either one safely. So, we want to filter on 'Updated Task Code'.
+
+```{r}
+test_data_2<- test_data %>%
+  filter(`Task Code` != 'Sonde Data' & `Task Code` != 'Pressure' ) %>% 
+  select(-`Updated Task Code`)
+
+(nms <- names(test_data_2[,sapply(test_data, function(x)all(is.na(x)))]))
+```
+Most of those are parameters principally associated with sondes, pressure transducers, or weather records.  These are appropriately removed from the data.  But it does not include ALL chloride or DO measures, presumably because of data QA/QC data collected.
+
+```{r}
+(nms <- nms[c(1,4,6,7,8,9,10,11)])
+```
+
+
+```{r}
+test_data_2 <- test_data_2 %>% select( - any_of(nms)) %>% 
+```
+
+
+That's better.  Only `r prettyNum(object.size(test_data_2),big.mark = ",")' bytes.
+
+```{r}
+cat(prettyNum(object.size(test_data_2), big.mark = ','))
+```
+It's not strictly necessary, but we can organize data columns into useful categories
+
+```{r}
+names(test_data_2)
+```
+# Categorization
+So, we can break those down into several categories
+1.  **Sample Identification**
+    *  Site
+    *  sample_date_and_type
+    *  Sample Date
+    *  Sample Type
+    *  Task Code
+    
+2.  **Polycyclic Aromatic Hydrocarbons**
+    *  2-Chloronaphthalene
+    *  2-Methylnaphthalene
+    *  Acenaphthene
+    *  Acenaphthylene
+    *  Anthracene
+    *  Benzo(a)anthracene
+    *  Benzo(a)pyrene
+    *  Benzo(b)fluoranthene
+    *  Benzo(ghi)perylene
+    *  Benzo(k)fluoranthene
+    *  Chrysene
+    *  Dibenz(a,h)anthracene 
+    *  Dibenzofuran 
+    *  Fluoranthene 
+    *  Fluorene   
+    *  Indeno(1,2,3-cd)pyrene 
+    *  Naphthalene 
+    *  Phenanthrene 
+    *  Pyrene 
+    
+3. **Metals**
+    *  Aluminum
+    *  Antimony
+    *  Arsenic
+    *  Barium
+    *  Beryllium
+    *  Cadmium
+    *  Chromium 
+    *  Cobalt
+    *  Copper 
+    *  Iron
+    *  Lead
+    *  Manganese
+    *  Mercury 
+    *  Nickel                                      
+    *  Selenium
+    *  Silver
+    *  Thallium
+    *  Vanadium                     
+    *  Zinc 
+
+4. **Major Cations**
+    *  Calcium       
+    *  Magnesium 
+    *  Potassium
+    *  Sodium
+    *  CHLORIDE (AS Cl)
+    *  CHLORIDE (AS CL)
+    *  Chloride (Chlorine)
+    *  Chloride, Calculated
+    *  Hardness (As CaCO3) (used for determining toxicity of metals)
+    *  Salinity (from sodium)
+    *  Specific Conductivity
+    *  Total Dissolved Solids
+    
+5. **Macronutrients**
+    *  Ammonia
+    *  Nitrate as N
+    *  Nitrite as N 
+    *  Nitrogen
+    *  Nitrogen, Kjeldahl, Total
+    *  Organic Nitrogen
+    *  Phosphate Ion
+    *  Phosphorus
+   
+6. **Dissolved Oxygen**
+    *  Dissolved Oxygen
+    *  Dissolved Oxygen Saturation
+   
+7. **Weather**
+    *  Precipitation
+    *  Temperature
+ 
+8. **Other WQ Parameters**
+    *  Cyanide
+    *  Oxidation-Reduction Potential
+    *  pH
+    *  Turbidity
+
+
+
+# Load Raw Data
+```{r load_raw}
+sibfldnm    <- 'Original_Data'
+subfldnm    <- 'omitfromgit'
+subsubfldnm <- 'Raw_EQuIS_Data'
+
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+targetfldr <- file.path(sibling, subfldnm, subsubfldnm)
+```
+
+We want to read this in in pieces.  Much of the data we don't actually need.  Especially any data htat is sonde data or pressure data.
+```{r} 
+
+
+fn < '20190805_dt_sample.txt'
+
+```
+
+
+

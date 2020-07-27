@@ -1,18 +1,30 @@
 ---
 title: "LCWMD Data Import"
-output: html_notebook
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership"
+date: "(Revised 7/21/2020)"
+output:
+  github_document:
+    toc: true
+    fig_width: 7
+    fig_height: 5
 ---
-# Import Libraries
 
-```{r}
+<img
+  src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+  style="position:absolute;top:10px;right:50px;" />
+
+# Import Libraries
+```{r load_libraries}
 library(readxl)
 library(tidyverse)
 ```
 
 # Data Review
-We have some trouble reading in these files, because of their size. If we mis-specify column data types, it really slows down data loading. But if we get that  right, we can read these in fairly quickly.
-```{r}
-sibfldnm    <- 'Original Data'
+We begin by reviewing content of one of the Excel spreadsheets provided to us., for site S)1.
+
+We have some trouble reading in these files, because of their size. If we mis-specify data types, it slows down loading. But if we get that right, we can read these in fairly quickly.  It pays to specify data columns to speed the data load process.
+```{r load_test_data}
+sibfldnm    <- 'Original_Data'
 subfldnm    <- 'Data_Package_to_LCWMD'
 subsubfldnm <- 'Data_by_Sites_Types'
 parent      <- dirname(getwd())
@@ -36,14 +48,14 @@ summary(test.data)
 # rm(test.data)
 ```
 
-The structure of the source Excel files is a bit confusing.  The consolidated data in the first tab of each data sheet are derived from lookup formulae that extract data from the source data, present in the "Sonde" and "Pressure" tabs.  The consolidated data sheet FIRST tries to pull matching data from the Sonde data, and if that is not available, it then pulls data from the pressure transducer. 
+The structure of the source Excel files is a bit confusing.  The consolidated data in the first tab of each data sheet are derived from lookup formulas that extract data from the source data, present in the "Sonde" and "Pressure" tabs.  The consolidated data sheet FIRST tries to pull matching data from the Sonde data, and if that is not available, it then pulls data from the pressure transducer. 
 
-That order of precendence is arguably incorrect for water depth, which is based on pressure, and thus should be more accurate if derived from the pressure transducers, not the sondes. However, it turns out that no pressure or depth data was included in the sonde data (even though some sondes DO have pressure sensors). (Relevant code removed).  We are correctly pulling depth data from the pressure transducers only, despite the abiguous formulae.
+That order of precedence is arguably incorrect for water depth, which is based on pressure, and thus should be more accurate if derived from the pressure transducers, not the sondes. However, it turns out that no pressure or depth data was included in the sonde data (even though some sondes DO have pressure sensors). We are correctly pulling depth data from the pressure transducers only, despite the ambiguous formulas.
 
 For some parameters, notably calculated chlorides, dissolved oxygen, and percent saturation, each observation is split into two columns, the first being the observation, and the second being labeled as "ND" in the original data.
 
 Lets figure out what type of values those include.
-```{r}
+```{r content_of_ND)}
 fn <- "S01 Merged Pressure and Sonde.xlsx"
 fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
 test.data <- read_excel(fpath, 
@@ -56,8 +68,8 @@ test.data <- read_excel(fpath,
     mutate_all(~factor(.))
 test.data %>% summarise()
 ```
-So, there is No data in those columns in the first spreadsheet.  We need to check all available data, so I'll go through each spreadsheet in turn and see whether these columns contian any non-missing values.
-```{r}
+So, there is No data in those columns in the first spreadsheet.  We need to check all available data, so I'll go through each spreadsheet in turn and see whether these columns contain any non-missing values.
+```{r all_ND, cache = TRUE}
 results <- matrix(c(length(levels(test.data[,1])),
              length(levels(test.data[,2])),
              length(levels(test.data[,3]))), nrow=1)
@@ -85,16 +97,21 @@ for (site in othersites) {
 rownames(results) <- c("S01", othersites)
 results
 ```
-So, there is no data in the those "ND" columns anywhere.  We can safely drop them.
-```{r}
+So, there is no data in the the "ND" columns anywhere.  We can safely drop them.
+
+```{r cleanup}
 rm(test.data, results, current, site)
 ```
 
 # Load Final Data
 ## First Site
-Using columnn designations can drastically slow this code, if R locates import errors.
-# So we read in everything by default column type -- which works -- then delete selected columns after it's read in.
-```{r}
+Using column designations speeds up file import -- unless there are errors.  Preparing and printing error messages drastically slows this code.
+
+We load one data set first, to set up data format, before loading the other files.  This is not strictly necessary, but it's convenient to have a first dataframe to add others to using bind_rows.
+```{r load_first}
+fn <- "S01 Merged Pressure and Sonde.xlsx"
+fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+
 the_data <- read_excel(fpath, 
         sheet = "Consolidated 15 min",
         col_types = c("date", 
@@ -104,17 +121,15 @@ the_data <- read_excel(fpath,
                 "numeric"),
         skip = 2,
         na='NA#')
-#View(the_data)
-summary(the_data)
 ```
 ## Iterate over other sites
-```{r}
+```{r load_others}
 othersites = c("S03", "S05", "S06B", "S07",  "S17")
 the_data <- the_data %>%
     mutate(Site = "S01" )
 for (site in othersites) {
     cat(site)
-    cat("...")
+    cat("...\n")
     fn <- paste(site, "Merged Pressure and Sonde.xlsx")
     fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
     
@@ -132,8 +147,9 @@ for (site in othersites) {
 }
 
 ```
-It is worth noting that the data are NOT sorted by date and time, but apparently by Month, day, and time.  That is, at least some of the time, Data with the same calendar dates and times from different years are stored toggether.  I address that in this next block of code.
-```{r}
+## Rename and Reorder
+It is worth noting that the data are NOT sorted by date and time, but apparently by Month, day, and time.  That is, at least some of the time, Data with the same calendar dates and times from different years are stored together.  I address that in this next block of code.
+```{r rename_and_reorder}
 newnames <- c('DT', 'Chl', 'D', 'DO', 'PctSat', 'pH', 'Press', 'SpCond', 'T','Precip', 'Site')
 names(the_data) <- newnames
 
@@ -147,8 +163,8 @@ rm(tmp.data, site, newnames)
 ```
 
 # Export the Data
-```{r}
-write.csv(the_data, 'Sonde Data.csv')
+```{r export_data}
+write.csv(the_data, 'Sonde_Data.csv')
 ```
 
 

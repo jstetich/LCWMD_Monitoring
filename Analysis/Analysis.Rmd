@@ -1,5 +1,5 @@
 ---
-title: "Analysis of LCWMD 'Sonde'Contiunous' Data"
+title: "Analysis of LCWMD 'Sonde'Continuous' Data"
 output: html_notebook
 ---
 # Import LIbraries  
@@ -13,7 +13,7 @@ library(emmeans)  # Provides tools for calculating marginal means
 
 # Import Data
 ```{r}
-sibfldnm    <- 'Derived Data'
+sibfldnm    <- 'Derived_Data'
 parent      <- dirname(getwd())
 sibling     <- file.path(parent,sibfldnm)
 
