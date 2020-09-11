@@ -5,41 +5,33 @@ output: html_notebook
 # Introduction
 This R Notebook explores various models for anlyzing chloride levels in Long Creek. My principal goal is NOT to predict future values, but to assess the contribution of certain (time varying) predictors to explaining the pattern in the time series. 
 
-This notebook looks principally at chlorides, and a single site, to explore model structure that may work.  It is worth pointing out that I explored dozens of prior model types before settling on the structure I'm using here. Here I am especially interested in looking at whether there have been long-term trends in water quality over the duration of the LCWMD monitoring program.
+This notebook looks principally at chlorides, and a single site, to explore model structure.  We explored dozens of prior models before settling on the structure we are using here. We are especially interested in looking at whether there have been long-term trends in water quality over the duration of the LCWMD monitoring program.
 
 The key insight is that we can use generalized least squares or generalized additive models with an auto regressive error term. This motivates most of the models explored here.
 
 In this notebook, I explore time series methods to  assess temporal trends in the LCWMD data. Simple linear models of the LCWMD data are based on the assumption that observations are independent, however, we know both on principal and from working with the data, that the data are both auto-correlated and cross-correlated in complex ways.
 
-One challenge to analyzing the original data from LCWMD was INCOMPLETE, in the sense that it was missing data from certain days or times. The time series methods in base R assume complete data in terms of how the data is laid out -- even if many values are NA.  The time series is assumed to be a sequence of observations equally spaced.
+One challenge to analyzing the original data from LCWMD was INCOMPLETE, in the sense that it was missing data from certain days or times. The simplest time series methods in base R assume complete data in terms of how the data is laid out -- even if many values are NA.  The time series is assumed to be a sequence of observations equally spaced.
 
-Several alternative formulations of the data are available in the "Derived Data" folder that facilitates different types of models.
+One solution is to use the zoo package, which extends time series methods in base R to indexed series, where the index can be any value that supports ordering. Or you can use the xts package, which extends zoo.  But we found those tools of marginal value in the context of developing complex linear and GAM models with autoregressive error terms.  The principal limit we ran into ws the inability of the modelling tools to run large models with autoregressive errors.
 
-One solution is to use the zoo package, which extends time series methods in base R to indexed series, where the index can be any value that supports ordering. Or you can use the xts package, which extends zoo.
-
-I  ended up constructing complete (or nearly complete) timeseries as an alternative. After exploring base TS methods and zoo methods, I have fallen back on linear models, with lags and weighted sums of recent rainfall calculated in advance.   
+We ended up constructing complete (or nearly complete) timeseries as an alternative. After exploring base TS methods and zoo methods, we fell back on linear and GAM models, with lags and weighted sums of recent rainfall calculated in advance.   
 
 # Import Libraries  
 ```{r}
 library(tidyverse)
 library(readr)
 library(emmeans)   # Provides tools for calculating marginal means
-library(ggeffects) # provides access functions to emmeans that return tidy tibbles and facilitate plots
-# library(ggeffects)  # an alternate effects/predict emmeans tool for ggplot graphics
 #library(RColorBrewer)  # provides some nice color paletts for graphics.
 library(nlme)      # includes the gls function, which simplifies some weighted LS
 #library(chron)    # simplifies management of date and time objects
 library(lubridate) # simplifies management of date and time objects
 library(zoo)       # provides utilities for working with indexed time series
-# library(xts)
-#library(tseries)
-# library(forecast)  # additional utilities for TS models
-#library(lmtest)    # Includes a "durbin watson test" for autocorrelated order
+#library(lmtest)   #  Includes a "durbin watson test" for autocorrelated order
                    # Alternative would be package car.
-library(mgcv)      # One of two common libraries for general additive models.
+library(mgcv)      # One of two common libraries for generalized additive models.
                    # Function gamm allows autocorrelation.
-                   # plot allows examination of GAM fit components
-library(broom)    # Allows ready conversion to tidy tibbles
+library(broom)     # Allows ready conversion of model objects to tidy tibbles
 ```
 
 # Import Data
@@ -47,7 +39,7 @@ library(broom)    # Allows ready conversion to tidy tibbles
 These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated November 13, 2019
 File No. 09.0025977.02.
 
-#Utility Function
+# unctions for Weighted SUms
 Here we create a couple of functions to calculate weighted sums of recent precipitation.  We only use expweights, below.
 ```{r}
 linweights <- function(x, rate=.1) {
@@ -82,11 +74,11 @@ These data were derived from Table 2 from a GZA report to the Long Creek Watersh
 ```{r}
 # Read in data and drop the East Branch, where we have no data
 
-sibfldnm    <- 'Derived Data'
+sibfldnm    <- 'Derived_Data'
 parent      <- dirname(getwd())
 sibling     <- file.path(parent,sibfldnm)
 
-fn <- "Site IC Data.csv"
+fn <- "Site_IC_Data.csv"
 fpath <- file.path(sibling, fn)
 
 Site_IC_Data <- read_csv(fpath) %>%
@@ -107,11 +99,11 @@ Read in the data from the Derived Data folder.
 
 Note that I filter out data from 2019 because that is only a partial year, which might affect estimation of things like seasonal trends.  We could add it back in, but with care....
 ```{r}
-sibfldnm    <- 'Derived Data'
+sibfldnm    <- 'Derived_Data'
 parent      <- dirname(getwd())
 sibling     <- file.path(parent,sibfldnm)
 
-fn <- "Full Data.csv"
+fn <- "Full_Data.csv"
 fpath <- file.path(sibling, fn)
 
 full_data <- read_csv(fpath, 
@@ -142,12 +134,12 @@ ggplot(full_data, aes(sdate, Chl_Median)) + geom_point(aes(color=Site), alpha=0.
 
 Note that the smooth fits here really don't make much sense, since the data accross multiple sites are combined, but it's useful for assessing whether the data is in the format we want.  Still note the general downward trend in most years.
 
-# Reduced data
+# Data for Site 17 alone.
 ```{r}
 the_data <- full_data %>% filter(Site=='S17')
 ```
 
-# Explore autocorrelations structure
+# Explore autocorrelation structure
 Now that we have a zoo, we can look at autocorrelation and crosscorrelaitons stucture.  But since I pull data out of the zoo objects using coredata(), this is the same as runing the analysis on a non-zoo object.  So these analysis don't handle seasonal patterns or winter data gaps correctly. These are preliminary analyses only.
 ```{r}
 oldpar <- par(mfrow=c(2,3), mar = c(1,2,3,1))
@@ -194,19 +186,6 @@ Chl_llm_1 <- lm(log(Chl_Median) ~ Yearf + lPrecip +
                   na.action=na.omit)
 summary(Chl_llm_1)
 ```
-
-## Formal analysis of lags
-```{r}
-Chl_llm_1.1 <- lm(log(Chl_Median) ~ Yearf + lPrecip +
-                  lag1 + lag2 + lag3 + lag4 + lag5 +
-                  lag6 + lag7 + lag8+ lag9 + lag10 +
-                  lD_Median +
-                  poly(DOY,5), data = the_data,
-                  na.action=na.omit)
-summary(Chl_llm_1.1)
-```
-So, fitting the lags actually provides a slightly LESS strong fit than fitting a weighted sum of recent rainfall.  Also note that in this case, the eight, nine, and ten day lags are not significant in this model. (That varies with the specific model).
-
 ## Strictly Periodic (sine and cosine) fit.
 ```{r}
 Chl_llm_2 <- lm(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median +
@@ -492,7 +471,7 @@ gam_fit <- gamm(log(Chl_Median) ~ Yearf +
 ```
 
 # And a simpler GLS model
-I add a quadratic term for the lD_Median to allow for curvature of the response, like what we soo in teh GAM.
+I add a quadratic term for the lD_Median to allow for curvature of the response, like what we saw in the GAM.
 ```{r}
 gls_fit <- gls(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + I(lD_Median^2) +
                     lPrecip:lD_Median +
@@ -507,7 +486,7 @@ gls_fit <- gls(log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + I(lD_M
 We use the emmeans package to adjust predictions for other covariates.  However, the package is not behaving similarly for bothe the GAMM and GLS fits.
 
 ## Simplest call for the GAMM fit.
-Here we need to provide infromation to allow emmeans to extract values. 
+Here we need to provide information to allow emmeans to extract values. 
 ```{r}
 (f <- gam_fit$gam$formula)
 t1 <- emmeans(gam_fit, ~Yearf, type='response',
@@ -518,7 +497,8 @@ t2 <- emmeans(gam_fit, ~Yearf, type='response', cov.reduce=median,
              call = quote(gamm(f, data = the_data)))
 t2
 ```
-What were the reference values in each case?  Note, we could also create our own function. for defineing the grid sumamry values.
+
+What were the reference values in each case?  Note, we could also create our own function. for defining the grid summary values.
 ```{r}
 ref_grid(gam_fit, ~Yearf, type='response',
              call = quote(gamm(f, data = the_data)))
@@ -527,7 +507,7 @@ ref_grid(gam_fit, ~Yearf, type='response', cov.reduce =  median,
 ```
 So, the median values are slightly "drier" and the estimated chloride levels are slightly higher. The 2015th day of the year is August 2nd or 3rd.
 
-Or the alternative, offering only the data, which generates slightly different estimates..  WHY?
+Or the alternative, offering only the data, which generates slightly different estimates.  WHY?
 ```{r}
 t3 <- emmeans(gam_fit, ~Yearf, data = the_data, type = 'response')
 str(t3)
@@ -542,7 +522,7 @@ tidy(tt)
 ```
 
 # Some Graphics Alternatives
-ggemmeans is VERY slow.  And I can't specify type = 'response' because ggemmeans usesthe type= parameter for somethign different.
+ggemmeans is VERY slow.  And I can't specify type = 'response' because ggemmeans usesthe type= parameter for something different.
 ```{r}
 plot(tt, horizontal = FALSE, comparisons=TRUE) + 
   xlab('Year')+ ylab('Chlorides (mg/l)') + ggtitle('Adjusted Geometric Means') +
@@ -563,9 +543,7 @@ t3<- emmeans(gls_fit, ~Yearf, mode = "appx-satterthwaite", type = 'response')
 tidy(t3)
 
 ```
-Note that  the degrees of freedom are caclulated very differently, but the stabdard errors and confidence intervals are not very different.
-
-
+Note that the degrees of freedom are calculated very differently, but the standard errors and confidence intervals are not very different.
 
 
 # Decomposing model results
@@ -669,7 +647,9 @@ weather_fit <- gamm(aChl_Median ~
 The following almost works -- but it needs to be matched up with dates correctly.
 ```{r}
 q = predict(weather_fit$gam, newdata = tmp)
-r = tmp$aChl_Median-q
+# Not sure wHY, BUT  aChl_Median had dim = c(964,1), so we need to remove its dims
+mm <- drop(tmp$aChl_Median)
+r = mm-q
 
 tmp2 <- tmp %>%
   mutate(kind = 'Weather',
