@@ -1,0 +1,141 @@
+---
+title: "Examining the Structure of the Excel Files from GZA"
+author:  "Curtis C. Bohlen, Casco Bay Estuary Partnership"
+date: "7/28/2020"
+output:
+  github_document:
+    toc: true
+    fig_width: 7
+    fig_height: 5
+---
+
+<img
+  src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+  style="position:absolute;top:10px;right:50px;" />
+
+
+# Load Libraries
+```{r load_libraries}
+library(readxl)
+library(readr)
+library(tidyverse)
+```
+
+# Introduction
+The Excel files provided by GZA are hard to work with. They are very large and  slow to load.  Our first attempt was to simplify these files by pooling them into separate tabs in an Excel Spreadsheet using an Excel Macro. it worked, but generated a huge file.  What became clear is that the Excel Files contain BOTH sonde and grab sample data, so for loading the grab sample data we are going to if we read things in one at a time and filter them immediately.
+
+This R Notebook explores the structure of the Excel files from GZA, in preparation for assembling a single consistent data set of grab sample data.
+
+# List Excel Files COntaining Grab Sample Data
+```{r list_files}
+sibfldnm    <- 'Original_Data'
+subfldnm    <- 'Data_Package_to_LCWMD'
+subsubfldnm <- 'Data_by_Sites_Types'
+
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+targetfldr <- file.path(sibling, subfldnm, subsubfldnm)
+fns <- list.files(targetfldr)
+(fns <- fns[nchar(fns)<=9])
+
+```
+
+# Check File Structure 
+Now, lets check to see if the  Excel Spreadsheets contain the same data columns (and in the same order....)
+
+## Check Sheet Names
+```{r sheet_names}
+for (fn in fns) {
+  cat(fn)
+  cat('\n')
+  fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+  sheets <- excel_sheets(fpath)
+  print(sheets)
+  cat('\n')
+}
+```
+In all cases, the first sheet contains the data we want.
+
+## Check Names of Data Columns
+We learned from directly examining the files that each has two rows that should be skipped before the real data starts. In each case, the third row contains the column names.
+```{r column_names, warning=FALSE}
+# A simple file reader that encapuslated reading that third line
+myreader <- function(nm) {
+  cat(nm)
+  cat('\n')
+  fpath <- file.path(sibling, subfldnm, subsubfldnm, nm)
+  line <- read_excel(fpath, sheet=1, col_names = FALSE, range = cell_rows(3), col_types = 'text')
+  line$site = strsplit(nm, '.')[1]
+  line
+}
+
+#Using lapply, we generate a list of one-row tibbles, and bind_rows them togehter into one tible.
+nms <- lapply(fns, myreader)
+names(nms) <- fns
+bind_rows(nms, .id= 'source')
+```
+
+So, what we see is that the structure appears similar -- two blank lines, then column names, then data.
+
+The data column names are similar but not identical from one spreadsheet to the next.  In particular:
+1.  S11 and S12 lack the "Updated Task Code" column, 
+2. "Updated Task Code" is called "Task Code Updated" in S04.
+3. "Precipitation" is "Precipitation (inches) in S04, S11, and S12.
+
+Other Notes:
+1.  Non-standard names (with spaces, parentheses, etc.)
+2.  A wide range of parameters, alphabetical, not sorted by categories
+3.  What was the 'Updated Task Code'?
+4.  Several Parameters are entered in multiple ways
+    *  "CHLORIDE (AS Cl)"
+    *  "CHLORIDE (AS CL)"
+    *  "Chloride (Chlorine)"
+    *  "Chloride, Calculated"
+    *  "Dissolved Oxygen"
+    *  "DISSOLVED OXYGEN"
+    *  "DISSOLVED OXYGEN SAT PERCENT"
+    *  "Dissolved oxygen saturation"
+    *  "Dissolved Oxygen Saturation"
+5.  No data specifying the sample site.  We'll have to add that.
+
+# Read Test Data
+```{r test_data, cache = TRUE}
+fn = fns[1]
+fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
+test_data <- read_excel(fpath, sheet = 1, skip=2)
+```
+
+That's a BIG dataframe, accounting for `r prettyNum(object.size(test_data),big.mark = ",")' bytes.  Ouch. 
+```{r, file_sz_1}
+cat(prettyNum(object.size(test_data), big.mark = ','))
+```
+
+# Identifying Sonde and Pressure transducer Data
+```{r crosstab}
+xtabs(~`Task Code` + `Updated Task Code`, data = test_data , addNA = TRUE)
+```
+So, the Updated Task Code converted a large number of "Sonde Data" to "Pressure" codes.  But that's all, so we can filter on either one safely.
+
+# What Data is Consistently Missing After we Remove Sonde Data?
+```{r always_missing}
+test_data_2<- test_data %>%
+  filter(`Task Code` != 'Sonde Data' & `Task Code` != 'Pressure' )
+
+(nms <- names(test_data_2[,sapply(test_data_2, function(x) all(is.na(x)))]))
+
+```
+Most of those are parameters principally associated with sondes, pressure transducers, or weather records.  These are appropriately removed from the data for grab samples.  But it does not include ALL chloride or DO measures, presumably because of data QA/QC data collected.
+
+# How to remove selected data
+```{r remove_by_name}
+(nms <- nms[c(1,4,6,7,8,9,10,11)])
+test_data_2 <- test_data_2 %>% select( - any_of(nms))
+```
+
+That's better.  Only `r prettyNum(object.size(test_data_2),big.mark = ",")' bytes.
+
+```{r file_sz_2}
+cat(prettyNum(object.size(test_data_2), big.mark = ','))
+```
+

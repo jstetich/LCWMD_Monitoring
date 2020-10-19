@@ -1,7 +1,7 @@
 ---
-title: "Untitled"
+title: "Import Grab Sample Data From Excel Files"
 author:  "Curtis C. Bohlen, Casco Bay Estuary Partnership"
-date: "7/22/2020"
+date: "7/28/2020"
 output:
   github_document:
     toc: true
@@ -18,14 +18,12 @@ output:
 ```{r load_libraries}
 library(readxl)
 library(readr)
-library(lubridate)
 library(tidyverse)
 ```
 
 
 # Load Grab Sample Data
-One again, the Excel files provided by GZA are hard to work with. They are very large, with many associated tabs. This makes them slow to load.  Our first attempt was to simplify these files by pooling them into separate tabs in an Excel Spreadsheet using an Excel Macro. it worked, but generated a huge file.  What became clear is that the Excel Files contian BOTH sonde and grab sample data, so we need to do some filter to simplify and reduce the data.
-
+The Excel files provided by GZA are are very large and slow to load.  Our first attempt was to simplify these files by pooling them into separate tabs in an Excel Spreadsheet using an Excel Macro. it worked, but generated a huge file.  What became clear is that the Excel Files contian BOTH sonde and grab sample data, so for loading the grab sample data we are going to read files in one at a time and filter them immediately.
 
 ```{r list_files}
 sibfldnm    <- 'Original_Data'
@@ -41,127 +39,69 @@ fns <- list.files(targetfldr)
 
 ```
 
-
-## Check File Structure COnsistency
-Now, lets check to see if the other Excel Spreadsheets contain the same data columns (and int he same order....)
-
-
-### Check Sheet Names
-```{r sheet_names}
-for (fn in fns) {
-  cat(fn)
+# Assemble Grab Sample Data
+(This takes perhaps 5 minutes on my computer).
+```{r}
+myreader2 <- function(nm) {
+  cat(nm)
   cat('\n')
-  fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
-  sheets <- excel_sheets(fpath)
-  print(sheets)
-  cat('\n')
+  fpath <- file.path(sibling, subfldnm, subsubfldnm, nm)
+  dat <- read_excel(fpath, sheet = 1, skip=2) %>%
+    filter(`Task Code` != 'Sonde Data' & `Task Code` != 'Pressure' )
+  dat
 }
+dat <- lapply(fns, myreader2)
+names(dat) <- fns
+the_data <- bind_rows(dat, .id= 'source')
 
 ```
-In all cases, the first sheet contains the data we want. This is in part because I copied the SO1.xls and removed numerous graphics.
 
-### Check How first several rows are organized
-
-I thought this would run fast, since I am only looking at the first few lines,
-but it still took a HUGE amount of time, mostly with the first file, which
-has many associated tabs of graphics.  It also closed down my secondary monitor,
-crashed Zoom, etc.  This is almost certainly a memory issue.  It appears that 
-read_excel() is reading in the whole file before importing only the first few
-lines.
-
+# What Data is Always Missing?
 ```{r}
-for (fn in fns) {
-  cat(fn)
-  cat('\n')
-  fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
-  toplines <- read_excel(fpath, sheet=1, col_names = as.character(101:105), range = 'A1:F5', col_types = 'text')
-  cat(toplines)
-  cat('\n')
-}
-
+(nms <- names(the_data[,sapply(the_data, function(x) all(is.na(x)))]))
 ```
 
 
-
-The following takes a LONG time.  This suggest that if I can derive a consistent approach to managing these data, I should write it as a script and allow it to run in the background.  A substantial amount of the trouble may be 
-```{r test_data, cache = TRUE}
-fn = fns[1]
-fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
-
-test_data <- read_excel(fpath, sheet = 1, skip=2)
-```
-
-That's a BIG dataframe, accounting for `r prettyNum(object.size(test_data),big.mark = ",")' bytes.  Ouch.
-
+# Clean up Data
 ```{r}
-cat(prettyNum(object.size(test_data), big.mark = ','))
+the_data_2 <- the_data %>%
+  mutate(site = strsplit(source, '.', fixed = TRUE)[[1]][1]) %>%
+  select(-`Updated Task Code`, -`Task Code Updated`,
+         -`updated task code`, -source, - sample_date_and_type) %>%
+  select(-all_of(nms)) %>%
+  mutate(Precipitation = if_else(is.na(Precipitation), `Precipitation (inches)`, Precipitation)) %>%
+  select (-`Precipitation (inches)`) %>%
+  select(-Precipitation, -Temperature) %>%    #Just because we don't have a use for these data here.
+  select(site, everything())
 ```
 
+# We COULD generate a "long" form of the data using "pivot_longer()".
 
-```{r}
-names(test_data)
-```
+# Data Column Organization
+It's not strictly necessary, but we can organize data columns into useful categories.  These correspond to how we might analyze these data.  
 
-Notes:
-1.  Non-standard names (with spaces, parentheses, etc.)
-2.  A wide range of parameters, alphabetical, not sorted by categories
-3.  What was the 'Updated Task Code'?
-4.  Several Parameters are entered in multiple ways
-    *  "CHLORIDE (AS Cl)"
-    *  "CHLORIDE (AS CL)"
-    *  "Chloride (Chlorine)"
-    *  "Chloride, Calculated"
-    *  "Dissolved Oxygen"
-    *  "DISSOLVED OXYGEN"
-    *  "DISSOLVED OXYGEN SAT PERCENT"
-    *  "Dissolved oxygen saturation"
-    *  "Dissolved Oxygen Saturation"
-5.  No data specifying the sample site.
-
-```{r}
-xtabs(~`Task Code` + `Updated Task Code`, data = test_data , addNA = TRUE)
-```
-So, the Updated Task Code converted a large number of "Sonde Data" to "Pressure" codes.  So we can filter on either one safely. So, we want to filter on 'Updated Task Code'.
-
-```{r}
-test_data_2<- test_data %>%
-  filter(`Task Code` != 'Sonde Data' & `Task Code` != 'Pressure' ) %>% 
-  select(-`Updated Task Code`)
-
-(nms <- names(test_data_2[,sapply(test_data, function(x)all(is.na(x)))]))
-```
-Most of those are parameters principally associated with sondes, pressure transducers, or weather records.  These are appropriately removed from the data.  But it does not include ALL chloride or DO measures, presumably because of data QA/QC data collected.
-
-```{r}
-(nms <- nms[c(1,4,6,7,8,9,10,11)])
-```
-
-
-```{r}
-test_data_2 <- test_data_2 %>% select( - any_of(nms)) %>% 
-```
-
-
-That's better.  Only `r prettyNum(object.size(test_data_2),big.mark = ",")' bytes.
-
-```{r}
-cat(prettyNum(object.size(test_data_2), big.mark = ','))
-```
-It's not strictly necessary, but we can organize data columns into useful categories
-
-```{r}
-names(test_data_2)
-```
 # Categorization
-So, we can break those down into several categories
+We can break those down into categories.  After each category, we create a separate tibble containing those values and the sample idnetification information, and save in a subfolder.
 1.  **Sample Identification**
-    *  Site
-    *  sample_date_and_type
+    *  site
     *  Sample Date
     *  Sample Type
     *  Task Code
-    
-2.  **Polycyclic Aromatic Hydrocarbons**
+
+```{r}
+newsubfld <- 'grab_data'
+dir.create(newsubfld, showWarnings = FALSE)
+
+sample_info <- the_data_2 %>%
+  rename(thedate = `Sample Date`,
+         type = `Sample Type`,
+         taskcode = `Task Code`) %>%
+  select(-c(`2-Chloronaphthalene`:Zinc))
+```
+
+ 
+2.  **Organics (Polycyclic Aromatic Hydrocarbons and PCBs)**
+It appears the only PCB we ever studied was dibenzofuran.  All the rest of these are PAHs.
     *  2-Chloronaphthalene
     *  2-Methylnaphthalene
     *  Acenaphthene
@@ -181,6 +121,18 @@ So, we can break those down into several categories
     *  Naphthalene 
     *  Phenanthrene 
     *  Pyrene 
+```{r}
+organics_data <- the_data_2 %>%
+select(all_of(c('2-Chloronaphthalene', '2-Methylnaphthalene', 'Acenaphthene',
+       'Acenaphthylene', 'Anthracene', 'Benzo(a)anthracene', 'Benzo(a)pyrene',
+       'Benzo(b)fluoranthene', 'Benzo(ghi)perylene', 'Benzo(k)fluoranthene',
+       'Chrysene', 'Dibenz(a,h)anthracene', 'Dibenzofuran', 'Fluoranthene',
+       'Fluorene', 'Indeno(1,2,3-cd)pyrene', 'Naphthalene', 'Phenanthrene', 'Pyrene')))
+organics_data <- sample_info %>% bind_cols(organics_data)
+length(organics_data)
+write_csv(organics_data, file.path(newsubfld, 'organics.csv'))
+```
+    
     
 3. **Metals**
     *  Aluminum
@@ -201,66 +153,74 @@ So, we can break those down into several categories
     *  Silver
     *  Thallium
     *  Vanadium                     
-    *  Zinc 
+    *  Zinc
+```{r echo=FALSE}
+metals_data <- the_data_2 %>%  
+  select(all_of(c('Aluminum', 'Antimony', 'Arsenic', 'Barium', 
+                   'Beryllium', 'Cadmium', 'Chromium', 'Cobalt', 
+                   'Copper', 'Iron', 'Lead', 'Manganese', 'Mercury',
+                   'Nickel', 'Selenium', 'Silver', 'Thallium', 
+                   'Vanadium', 'Zinc')))
+metals_data <- sample_info %>% bind_cols(metals_data)
+length(metals_data)
+write_csv(metals_data, file.path(newsubfld, 'metals.csv'))
+```
+    
+    
 
-4. **Major Cations**
+4. **Major Cations, Anions, Salinity, Etc.**
     *  Calcium       
     *  Magnesium 
     *  Potassium
     *  Sodium
     *  CHLORIDE (AS Cl)
-    *  CHLORIDE (AS CL)
-    *  Chloride (Chlorine)
     *  Chloride, Calculated
     *  Hardness (As CaCO3) (used for determining toxicity of metals)
     *  Salinity (from sodium)
     *  Specific Conductivity
     *  Total Dissolved Solids
-    
+
+```{r}
+salts_data <- the_data_2 %>%  
+  select(all_of(c('Calcium', 'Magnesium', 'Potassium', 
+                  'Sodium', 'CHLORIDE (AS Cl)', 'Chloride, Calculated',
+                  'Hardness (As CaCO3)', 'Salinity (from sodium)',
+                  'Specific Conductivity', 'Total Dissolved Solids')))
+salts_data <- sample_info %>% bind_cols(salts_data)
+length(salts_data)
+write_csv(salts_data, file.path(newsubfld, 'salts.csv'))
+```
+
+filter_all(any_vars(! is.na(.)))
+
+
+
 5. **Macronutrients**
-    *  Ammonia
-    *  Nitrate as N
-    *  Nitrite as N 
-    *  Nitrogen
-    *  Nitrogen, Kjeldahl, Total
-    *  Organic Nitrogen
-    *  Phosphate Ion
-    *  Phosphorus
-   
-6. **Dissolved Oxygen**
-    *  Dissolved Oxygen
-    *  Dissolved Oxygen Saturation
-   
-7. **Weather**
-    *  Precipitation
-    *  Temperature
- 
-8. **Other WQ Parameters**
+```{r}
+nutrients_data <- the_data_2 %>%  
+  select(all_of(c('Ammonia', 'Nitrate as N', 'Nitrite as N', 'Nitrogen',
+                  'Nitrogen, Kjeldahl, Total', 'Organic Nitrogen', 
+                  'Phosphate Ion', 'Phosphorus')))
+nutrients_data <- sample_info %>% bind_cols(nutrients_data)
+length(nutrients_data)
+write_csv(nutrients_data, file.path(newsubfld, 'nutrients.csv'))
+```
+
+6. **Other WQ Parameters**
     *  Cyanide
     *  Oxidation-Reduction Potential
     *  pH
     *  Turbidity
+    *  Dissolved Oxygen
+    *  Dissolved Oxygen Saturation
 
-
-
-# Load Raw Data
-```{r load_raw}
-sibfldnm    <- 'Original_Data'
-subfldnm    <- 'omitfromgit'
-subsubfldnm <- 'Raw_EQuIS_Data'
-
-parent      <- dirname(getwd())
-sibling     <- file.path(parent,sibfldnm)
-
-targetfldr <- file.path(sibling, subfldnm, subsubfldnm)
-```
-
-We want to read this in in pieces.  Much of the data we don't actually need.  Especially any data htat is sonde data or pressure data.
-```{r} 
-
-
-fn < '20190805_dt_sample.txt'
-
+```{r}
+other_data <- the_data_2 %>%  
+  select(all_of(c('Oxidation-Reduction Potential', 'pH',
+                  'Turbidity', 'Dissolved Oxygen', 'Dissolved Oxygen Saturation')))
+other_data <- sample_info %>% bind_cols(other_data)
+length(other_data)
+write_csv(other_data, file.path(newsubfld, 'other.csv'))
 ```
 
 

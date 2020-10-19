@@ -20,7 +20,7 @@ library(tidyverse)
 ```
 
 # Data Review
-We begin by reviewing content of one of the Excel spreadsheets provided to us., for site S)1.
+We begin by reviewing content of one of the Excel spreadsheets provided to us., for site S01.
 
 We have some trouble reading in these files, because of their size. If we mis-specify data types, it slows down loading. But if we get that right, we can read these in fairly quickly.  It pays to specify data columns to speed the data load process.
 ```{r load_test_data}
