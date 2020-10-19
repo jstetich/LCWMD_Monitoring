@@ -167,7 +167,7 @@ Here we convert daily data to "dates during which "fail" or "Did not Fail" for e
 We have only a few criteria to look at:
 
 ### Dissolved oxygen
-Maine's B}Class B standards call for dissolved oxygen above 7 mg/l, with percent saturation above 75%.  The Class C Standards, which apply to almost all of Long Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 6.5 mg/l. In addition, the thirty day average dissolved oxygen must stay above 6.5 mg/l.  
+Maine's Class B standards call for dissolved oxygen above 7 mg/l, with percent saturation above 75%.  The Class C Standards, which apply to almost all of Long Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 6.5 mg/l. In addition, the thirty day average dissolved oxygen must stay above 6.5 mg/l.  
 ```{r}
 tClassCDO <- 5      # Units are mg/l or PPM
 tClassCPctSat <- 60
@@ -201,16 +201,21 @@ There are no criteria for maximum stream temperature, but we can back into thres
 tMaxT <- 27.6   # Celsius
 tAvgT <- 25.3
 ```
+
 ## Calculate Exceedances
 ```{r}
 exceedance_data <- daily_data %>%
   select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
-  mutate(ClassCDO = DO_Min>=tClassCDO, ClassBDO = DO_Min>=tClassBDO,
-         ClassC_PctSat = PctSat_Min>tClassCPctSat, ClassB_PctSat = PctSat_Min>tClassBPctSat,
+  mutate(ClassCDO = DO_Min >= tClassCDO, 
+         ClassBDO = DO_Min >= tClassBDO,
+         ClassC_PctSat = PctSat_Min > tClassCPctSat,
+         ClassB_PctSat = PctSat_Min > tClassBPctSat,
          ClassCBoth = ClassCDO & ClassC_PctSat,
          ClassBBoth = ClassBDO & ClassB_PctSat,
-         ChlCCC = Chl_Max<=tChlCCC, ChlCMC = Chl_Max <= tChlCMC,
-         MaxT = T_Max <= tMaxT, AvgT = T_Mean <= tAvgT) %>%
+         ChlCCC = Chl_Max <= tChlCCC,
+         ChlCMC = Chl_Max <= tChlCMC,
+         MaxT = T_Max <= tMaxT,
+         AvgT = T_Mean <= tAvgT) %>%
   select(-DO_Min, -PctSat_Min, -Chl_Max, -T_Max, -T_Mean)
 
 ```

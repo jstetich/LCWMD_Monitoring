@@ -1,5 +1,5 @@
 ---
-title: "Analysis of LCWMD 'Sonde'Continuous' Data"
+title: "Analysis of LCWMD 'Sonde Continuous' Data"
 output: html_notebook
 ---
 # Import LIbraries  
@@ -70,7 +70,7 @@ So:
 7. Chlorides are lowest in April, climbing again over the summer, and dropping in the fall.
 
 I'd like to extract fits for each of these terms in meaningful ways.  I need adjusted or LS means....
-Rather than fitting SITE as an independnet factor, it might be interesting to fit cummulative percent imperviousness, but that would take anested analysis.
+Rather than fitting SITE as an independnet factor, it might be interesting to fit cummulative percent imperviousness, but that would take a nested analysis.
 
 ```{r}
 (month.emm <- emmeans(the_lm, ~Month, transform='response'))
@@ -117,4 +117,4 @@ plt
 
 Note that because some sites were not sampled in earlier years, this slope may be misleading.
 
-SO, it is easy to see that SEASONAL patterns and differences among SITES are much mor important than changes over time in salinity. 
+SO, it is easy to see that SEASONAL patterns and differences among SITES are much more important than changes over time in salinity. 

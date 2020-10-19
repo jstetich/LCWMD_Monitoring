@@ -7,7 +7,7 @@ Data Notes
   
 # Data Files in This Folder
 1.  **Sonde_Data.csv**  --  (Omitted from Github Repository because of its size)
-    COntains raw data assembled from original Excel files.  See code in 
+    Contains raw data assembled from original Excel files.  See code in 
 #    *Import_Data.Rmd*  for details.
 2.  **Daily_Data.csv**   -- Daily summaries (min, max, median, mean, sd, IQr, n)
     derived from *Sonde_Data.csv*.  This is the version of the sonde data we principally

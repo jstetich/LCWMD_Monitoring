@@ -122,6 +122,7 @@ the_data <- read_excel(fpath,
         skip = 2,
         na='NA#')
 ```
+
 ## Iterate over other sites
 ```{r load_others}
 othersites = c("S03", "S05", "S06B", "S07",  "S17")
@@ -147,6 +148,7 @@ for (site in othersites) {
 }
 
 ```
+
 ## Rename and Reorder
 It is worth noting that the data are NOT sorted by date and time, but apparently by Month, day, and time.  That is, at least some of the time, Data with the same calendar dates and times from different years are stored together.  I address that in this next block of code.
 ```{r rename_and_reorder}
