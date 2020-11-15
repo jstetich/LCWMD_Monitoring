@@ -3,19 +3,44 @@ title: "Testing Models for Time Series Analysis of LCWMD Continuous Data"
 output: html_notebook
 ---
 # Introduction
-This R Notebook explores various models for anlyzing chloride levels in Long Creek. My principal goal is NOT to predict future values, but to assess the contribution of certain (time varying) predictors to explaining the pattern in the time series. 
+This R Notebook explores various models for anlyzing chloride levels in Long
+Creek. My principal goal is NOT to predict future values, but to assess the
+contribution of certain (time varying) predictors to explaining the pattern in
+the time series.
 
-This notebook looks principally at chlorides, and a single site, to explore model structure.  We explored dozens of prior models before settling on the structure we are using here. We are especially interested in looking at whether there have been long-term trends in water quality over the duration of the LCWMD monitoring program.
+This notebook looks principally at chlorides, and a single site, to explore
+model structure.  We explored dozens of prior models before settling on the
+structure we are using here. We are especially interested in looking at whether
+there have been long-term trends in water quality over the duration of the LCWMD
+monitoring program.
 
-The key insight is that we can use generalized least squares or generalized additive models with an auto regressive error term. This motivates most of the models explored here.
+The key insight is that we can use generalized least squares or generalized
+additive models with an auto regressive error term. This motivates most of the
+models explored here.
 
-In this notebook, I explore time series methods to  assess temporal trends in the LCWMD data. Simple linear models of the LCWMD data are based on the assumption that observations are independent, however, we know both on principal and from working with the data, that the data are both auto-correlated and cross-correlated in complex ways.
+In this notebook, I explore time series methods to  assess temporal trends in
+the LCWMD data. Simple linear models of the LCWMD data are based on the
+assumption that observations are independent, however, we know both on principal
+and from working with the data, that the data are both auto-correlated and
+cross-correlated in complex ways.
 
-One challenge to analyzing the original data from LCWMD was INCOMPLETE, in the sense that it was missing data from certain days or times. The simplest time series methods in base R assume complete data in terms of how the data is laid out -- even if many values are NA.  The time series is assumed to be a sequence of observations equally spaced.
+One challenge to analyzing the original data from LCWMD was INCOMPLETE, in the
+sense that it was missing data from certain days or times. The simplest time
+series methods in base R assume complete data in terms of how the data is laid
+out -- even if many values are NA.  The time series is assumed to be a sequence
+of observations equally spaced.
 
-One solution is to use the zoo package, which extends time series methods in base R to indexed series, where the index can be any value that supports ordering. Or you can use the xts package, which extends zoo.  But we found those tools of marginal value in the context of developing complex linear and GAM models with autoregressive error terms.  The principal limit we ran into ws the inability of the modelling tools to run large models with autoregressive errors.
+One solution is to use the zoo package, which extends time series methods in
+base R to indexed series, where the index can be any value that supports
+ordering. Or you can use the xts package, which extends zoo.  But we found those
+tools of marginal value in the context of developing complex linear and GAM
+models with autoregressive error terms.  The principal limit we ran into ws the
+inability of the modeling tools to run large models with autoregressive errors.
 
-We ended up constructing complete (or nearly complete) timeseries as an alternative. After exploring base TS methods and zoo methods, we fell back on linear and GAM models, with lags and weighted sums of recent rainfall calculated in advance.   
+We ended up constructing complete (or nearly complete) timeseries as an
+alternative. After exploring base TS methods and zoo methods, we fell back on
+linear and GAM models, with lags and weighted sums of recent rainfall calculated
+in advance.
 
 # Import Libraries  
 ```{r}

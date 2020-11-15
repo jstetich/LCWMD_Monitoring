@@ -1,116 +1,728 @@
 ---
-title: "Analysis of LCWMD 'Sonde'Contiunous' Data"
-output: html_notebook
+title: "Analysis of LCWMD 'Diurnal Exceedences'
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "11/12/2020"
+output:
+  github_document:
+    toc: true
+    fig_width: 7
+    fig_height: 5
 ---
-# Import LIbraries  
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+    
+# Introduction
+The Long Creek Watershed, a bit over two square miles in area, is dominated by
+commercial land use. The Maine Mall is one of the largest land owners in the
+watershed, and it is surrounded by a range of commercial businesses, from
+medical offices, to car washes.  About a third of the watershed in impervious
+surfaces like roads, parking lots, and rooftops.  Landowners with an acre or
+more of impervious area are required to get a Clean Water Act permit for
+stormwater discharges from their property.  The LCWMD provides an alternative
+for landowners to working to receive an individual permit.  Landowners who elect
+to participate in the The Long Creek Watershed Management District receive a
+General Permit, in return for providing funding to the District, and
+facilitating the work of the district by permitting access to their property for
+certain activities.
+
+For more information on LCWMD, see [their web site](restorelongcreek.org).
+
+Over the past decade, LCWMD has contracted with several consulting firms to
+provide  water quality monitoring services along Long Creek.  This has produced
+one of the most extensive and best documented data set from the Northeastern US 
+looking at water quality conditions in an urban stream.
+
+GZA Geoenvironmental Incorporated (GZA) has been the primary monitoring
+contractor for LCWMD for several years, and in 2019, they conducted a thorough
+review of LCWMD data. These analyses are based on their summary data sets, and
+recapitulate and extend their analyses.
+
+## Are Water Quality Criteria Met?
+In this R Notebook, we examine diurnal summarie data.
+
+In this data set a "TRUE" value consistently implies that water quality criteria
+were met or exceeded, whether that is achieved by a value higher than or lower
+than some numeric criteria.
+
+Primary questions include:  How common are exceedences?  How many occur in a
+row? Do they differ by time of year?  And are they increasing or decreasing?
+    
+## Sources of Threshold Values  
+### Dissolved oxygen
+Maine’s Class B standards call for dissolved oxygen above 7 mg/l, with percent
+saturation above 75%. The Class C Standards, which apply to almost all of Long
+Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 60%.
+In addition, the thirty day average dissolved oxygen must stay above 6.5 mg/l.
+
+### Chloride
+Maine uses established thresholds for both chronic and acute exposure to
+chloride. These are the “CCC and CMC” standards for chloride in freshwater.
+(06-096 CMR 584). These terms are defined in a footnote as follows:
+
+>   The Criteria Maximum Concentration (CMC) is an estimate of the highest
+    concentration of a material in surface water to which an aquatic community
+    can be exposed briefly without resulting in an unacceptable effect. The
+    Criterion Continuous Concentration (CCC) is an estimate of the highest
+    concentration of a material in surface water to which an aquatic community
+    can be exposed indefinitely without resulting in an unacceptable effect.
+
+The relevant thresholds are:
+
+*   Chloride CCC  = 230  mg/l
+*   Chlorite CMC  = 860  mg/l
+
+In practice, chlorides in the sonde-based Long Creek data used here  are
+estimated based on measurement of conductivity.  The chloride-conductivity
+correlations is fairly close and fairly robust, but estimation is an additional
+source of error, although generally on the level of 10% or less.
+
+### Temperature
+There are no legally binding Maine criteria for maximum stream temperature, but
+we can back into thresholds based on research on thermal tolerance of brook
+trout in streams. A study from Michigan and Wisconsin, showed that trout are
+found in streams with daily mean water temperatures as high as 25.3°C, but only
+if the period of exceedence of that daily average temperature is short – only
+one day. Similarly, the one day daily maximum temperature above which trout were
+not found was 27.6°C. That generates two temperature criteria, one for daily
+averages, and one for daily maximums. 
+
+These criteria should be taken as rough values only, as the  original study was
+observational, and thus the key driver of suitai bility for trout could be
+another stressor correlated with these temperature metrics.
+
+>  Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). “Field‐Based Estimates
+   of Thermal Tolerance Limits for Trout: Incorporating Exposure Time and
+   Temperature Fluctuation.” Transactions of the American Fisheries Society
+   136(2):365-374.
+
+# Import Libraries  
 ```{r}
 library(tidyverse)
+library(rlang)
 library(readr)
-library(vcd)      # contains contingency table plotting fxns -- NOT esential
+library(vcd)      # contains contingency table plotting fxn 'mosaic' -- NOT essential
+
+library(lme4)     # For mixed effects models and GLMER models
+#library(mgcv)     # For mixed effects GAMMs -- probably not needed here yet.
+
 library(emmeans)  # Provides tools for calculating marginal means
+
+
+
+
+library(CBEPgraphics)
+load_cbep_fonts()
+theme_set(theme_cbep())
+
+library(LCensMeans)
+```
+# Load Data
+## Establish Folder References
+```{r folder_refs}
+sibfldnm <- 'Derived_Data'
+parent   <- dirname(getwd())
+sibling  <- file.path(parent,sibfldnm)
+fn <- "Site_IC_Data.csv"
+
+# dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
 ```
 
-# Import Data
 ## Data on Sites and Impervious Cover
-These data were derived from Table 2 from a GZA report to the Long Creek Watershed Management District, titled "Re: Long Creek Watershed Data Analysis; Task 2: Preparation of Explanatory and Other Variables."  THe Memo is dated November 13, 2019
-File No. 09.0025977.02.
+These data were derived from Table 2 from a GZA report to the Long Creek
+Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
+Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
+November 13, 2019 File No. 09.0025977.02.
 ```{r}
 # Read in data and drop the East Branch, where we have no data
-Site_IC_Data <- read_csv("Site IC Data.csv")  %>%
-  filter(Site != "--") 
-
-# Now, create a factor that preserves the order of rows and 
-Site_IC_Data <- Site_IC_Data%>%
-  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+Site_IC_Data <- read_csv(file.path(sibling, fn))  %>%
+  filter(Site != "--") %>%
+  
+  # Now, create a factor that preserves the order of rows
+  mutate(Site = factor(Site, levels = Site))
 ```
+
 ## Main Data
+we remove 2019 data, as we don't have a complete year's worth of data, which may
+bias annual summaries.
 ```{r}
-sibfldnm    <- 'Derived Data'
-parent      <- dirname(getwd())
-sibling     <- file.path(parent,sibfldnm)
-
-fn <- "Exceeds Data.csv"
-fpath <- file.path(sibling, fn)
-exceeds = read_csv(fpath, progress=FALSE) %>%
+fn <- "Exceeds_Data.csv"
+exceeds = read_csv(file.path(sibling, fn), progress=FALSE) %>%
   select(-X1) %>%
-  mutate(IC=Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])
-
+  mutate(IC=Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)]) %>%
+  filter(Year < 2019) %>%
+  mutate(year_f = factor(Year)) %>%
+  mutate(season = cut(Month, breaks = c(0,2,5,8,11,13),
+                      labels = c('Winter', 'Spring',
+                                 'Summer', 'Fall', 'Winter'))) %>%
+  mutate(season = factor(season, levels = c('Winter', 'Spring', 
+                                           'Summer', 'Fall'))) %>%
+  mutate(month_f = factor(Month, levels = 1:12, labels = month.abb))
 ```
 
-
-# Initial Models
+# Initial Cross Tabs
+## Utility Function
+This function just adds a percent summary column to a cross-tab.
 ```{r}
-the_lm <- lm(log(Chl_Median) ~ factor(Month) + Site + Year + log(Precip+1) + log(PPrecip+1), data = daily_medians)
-anova(the_lm)
+xt_pct <- function(.form, .dat) {
+  #.form = ensym(.form)
+
+  xt <- xtabs(.form, data = .dat)
+  xt<- cbind(xt, round(apply(xt, 1, function(X) X[1]/sum(X)), 3)*100)
+  names(xt[3]) <- 'Percent Fail'
+  return(xt)
+}
+```
+
+
+
+We want summaries 
+## Dissolved Oxygen
+```{r}
+xt_pct(~Year + ClassCDO, exceeds)
+```
+
+## Percent Saturation
+```{r}
+xt_pct(~Year + ClassC_PctSat, exceeds)
+```
+
+This is slightly higher, but clearly the two exceedences are correlated.
+```{r}
+xtabs(~ ClassCDO + ClassC_PctSat, data = exceeds)
+```
+
+## Chloride Chronic
+```{r}
+xt_pct(~Year + ChlCCC, exceeds)
+```
+But the Strong pattern is by sites.
+```{r}
+xt_pct(~Site + ChlCCC, exceeds)
+```
+
+## Chloride Acute
+```{r}
+xt_pct(~Year + ChlCMC, exceeds)
+```
+```{r}
+xt_pct(~Site + ChlCMC, exceeds)
+```
+## Temperature Daily Average
+```{r}
+xt_pct(~Year + AvgT_ex, exceeds)
+```
+
+```{r}
+xt_pct(~Site + AvgT_ex, exceeds)
+```
+```{r}
+xt_pct(~Year + MaxT_ex, exceeds)
+```
+
+```{r}
+xt_pct(~Site + MaxT_ex, exceeds)
+```
+```{r}
+xtabs(~Year + Site + MaxT_ex, data=exceeds)
+```
+So almost all temperature problems were the first couple of years, and were
+maximum temperature excursions, not daily averages.  Frequency is low enough
+so no practical statistical models will be informative. Temperature is not worth
+further analysis
+
+# Statistical Models
+In general, we will run binomial GLM models.  We could treat sites either as 
+fixed or random factors.  Since we may want to assess differences between sites,
+fixed factors make more sense here.  We should include them as random factors
+if we want to draw lessons about site-level predictors like upstream impervious
+cover.
+
+There may also be value to fitting GAM or GAMM models, to allow fitting of
+seasonal terms, smoothed temporal trends or formally addressing autocorrelation.
+But complexity of such modes is a disincentive.
+
+Although daily status is almost certainly NOT independent in time, we start
+without addressing autocorrelation.  Also, we start without tapping other
+potential covariates or predictors, like daily mean temperatures.
+
+The core of the models will be Year and Site. Months and Seasons will 
+sometimes also be of interest, although usually because they will reduce error.
+
+Interaction terms between site and month or season are also potentially
+valuable. The problem is, probabilities in some cells of interaction  models are
+zero, which makes the GLM results unstable, and renders estimates of standard 
+errors deeply suspect.
+
+## Dissolved Oxygen
+### Plots showing raw Probabilities
+These are estimated as empirical relative frequencies, with error estimated 
+as two times the standard error of the estimate. 
+```{r}
+exceeds %>%
+  group_by(Site, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Year, do_p, color = Site)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
+```
+2016 was a rough year at most sites.
+
+```{r}
+exceeds  %>%
+  group_by(month_f, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Year, do_p, color = month_f)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
+```
+ That shows that 2016 was a tough year in June, July, August, and September,
+ while June and July were tough in 2018.  This highlights the role of drought 
+ in shaping conditions in Long Creek regarding dissolved oxygem.
+ 
+
+### Basic Model Selection
+We use a foolish full model here to allow `step()` to check needs for non-linear
+fits for year and whether monthly variation is captured adequately by seasons.
+Neitherwork, but they were worth checking.
+```{r}
+do_full     <- glm(ClassCDO ~ year_f + Year + Site +
+                   season + month_f,
+               family = 'binomial',data = exceeds, maxit = 100)
+do_step     <- step(do_full)
+
+```
+We need both the yearly factor and the monthly factor.
+
+```{r}
+anova(do_step, test = 'Chisq')
+
+```
+
+#### Alternate Model -- Fails
+We tried to fit a model with an interaction term, a couple of different ways.
+Unfortunately, structural zeros in the model lead to significant problems
+with estimation under the binomial model.
+
+These models, should the y work, force a statistical test for significance of
+the interaction term.
+
+```{r}
+do_alt <- glm(ClassCDO ~ year_f + Site + 
+                   month_f + Site:month_f,
+              family = 'binomial',
+                   data = exceeds, maxit = 100)
+```
+
+### Extract Marginal Means
+```{r}
+(emm_do_months = emmeans(do_step, ~ month_f , type = 'response'))
+```
+
+```{r}
+(emm_do_sites = emmeans(do_step, 'Site', type = 'response'))
+```
+Despite statistically significant contrasts, the marginal means are NOT 
+individually estimable, because of monster error bars. That probably reflects
+the influence of the winter months (P = 1.00; small samples) on the fit of the
+binomial model.
+
+```{r}
+(emm_do_years = emmeans(do_step, 'year_f', type = 'response'))
+```
+Again, we have no estimates to work with, despite significant model parameters.
+
+A possible solution would be to treat these as Poisson or
+quasi-Poisson models, instead of binomial models. Those should be
+computationally more stable to low or very low probabilities.
+
+We will examine the consequences of fitting a model to a subset of months a bit
+later.
+
+### Alternate Model: Poisson Regression Does Not Really Work
+Our goal is to fit a model that provides estimates of marginal probabilities. 
+```{r}
+
+do_poiss <- glm(ClassCDO ~ year_f + Site + 
+                   month_f,
+              family = 'poisson',
+                   data = exceeds, maxit = 100)
+```
+
+```{r}
+emmeans(do_poiss, 'year_f', type = 'response')
+```
+I am not comfortable, because I am unclear on how and why that model is working.
+With a rate near 1, a Poisson likelihood has significant probability mass
+associated  with n=2 and n=3 events, which are structurally impossible with our
+data. So we know the model is not fully appropriate.
+
+We can fit the inverse model, which has very low P, but that also appears to 
+become numerically unstable.  At least, the estimated probabilities have 
+enormous confidence intervals again:
+
+```{r}
+fails <- ! exceeds$ClassCDO
+do_poiss <- glm(fails ~ year_f + Site + 
+                   month_f,
+              family = 'poisson',
+                   data = exceeds, maxit = 100)
+```
+
+```{r}
+emmeans(do_poiss, 'year_f', type = 'response')
+```
+
+## DO Model for the 9 Warmer Months
+We have very little data from the three winter months (December, January, and
+February).  If we leave them out of the model, we can estimate more of the
+parameters we are interested in.
+
+Here we develop an alternate model, without the winter months, when data is very
+rare.  This eliminates the P = 1 and P = 0 cells in the model.
+```{r}
+exceeds_warm <- exceeds %>%
+  filter(! Month %in% c(12, 1, 2))
+```
+
+### Plots Showing Raw Averages
+These are NEARLY identical to the earlier charts  -- as expected.
+```{r}
+exceeds_warm %>%
+  group_by(Site, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Year, do_p, color = Site)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
 ```
 
 
 ```{r}
-plot(the_lm)
+exceeds_warm %>%
+  group_by(month_f, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Year, do_p, color = month_f)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
 ```
-
-No major problems with that model, although a few major outliers, with low leverage.  If anything the model is slightly light tailed, with a slight tendency to curvature, which suggests an underfit model. All terms are statistically significant, which is interesting, because I fit year as a linear term only. 
+That shows that July is a bit atypical in 2018.
 
 ```{r}
-old <- options() 
-options(digits=3,scipen=2)
-summary(the_lm)
-options(old)
-rm(old)
-```
-So:
-1. Present-day precipitation supresses chlorides, but effect is much smaller than differences among sites.
-2. Previous day precipitation ALSO suppresses chloride levels, but not by as much.
-3. Chlorides have been INCREASING over the period of record
-4. Site S01 and S017 have similar Chloride levels.
-5.The highest chlorides are at site S03, followed by S01 and S17, S07, S05, and S06B.
-6. The highest chlorides are in the winter months, especially February and March.
-7. Chlorides are lowest in April, climbing again over the summer, and dropping in the fall.
-
-I'd like to extract fits for each of these terms in meaningful ways.  I need adjusted or LS means....
-Rather than fitting SITE as an independnet factor, it might be interesting to fit cummulative percent imperviousness, but that would take anested analysis.
-
-```{r}
-(month.emm <- emmeans(the_lm, ~Month, transform='response'))
-```
-```{r}
-plot(month.emm) +
-  ylab("Month")+
-  xlab('Chlorides (mg/l)') +
-  ggtitle('Marginal Geometric Means of Daily Medians') +
-  theme_minimal() +
-  coord_flip()
+exceeds_warm %>%
+  group_by(Site, Month) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Month, do_p, color = Site)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
 ```
 
-The following needs to be reordered to make it easier to interpret, so we need to chose an ordering of factors.
+
+
+###  Stepwise Model Selection
 ```{r}
-site.emm <- emmeans(the_lm, ~Site, transform='response')
-plot(site.emm) +
-  ylab("Site")+
-  xlab('Chlorides (mg/l)') +
-  ggtitle('Marginal Geometric Means of Daily Medians') +
-  theme_minimal() +
-  coord_flip() 
+do_warm_full   <- glm(ClassCDO ~ year_f + Year + Site +
+                        season + month_f + Site:month_f,
+               family = 'binomial',data = exceeds_warm)
+do_warm_step = step(do_warm_full)
+```
+This model is estimable, and shows the need to directly address the interactions.
+
+```{r}
+do_warm_alt <- glm(ClassCDO ~ poly(Year,2) + I(Year == 2016) + Site + 
+                   month_f + Site:month_f,
+                   family = binomial,
+                   data = exceeds_warm)
 ```
 
 ```{r}
-(i <- emmeans(the_lm, ~1))
+anova(do_warm_step, test = 'Chisq')
 ```
 
 ```{r}
-p <- exp(5.1 + (2010:2019 - 2014)*0.046983 )
-dates = as.Date(paste(as.character(2010:2019), '06', '01', sep="-"))
-df <- tibble(dates = dates, p=p)
-plt <- ggplot() + geom_point(data = daily_medians, aes(x=sdate, y=Chl_Median, color=Site)) +
-  geom_line(data =df, aes(x=dates, y=p), lwd = 2, color='blue') +
-  xlab("Date")+
-  ylab('Chlorides (mg/l)') +
-  ggtitle('Daily Medians') +
-  theme_minimal() +
-  scale_y_log10()
-plt
+anova(do_warm_alt, do_warm_step, test = 'Chisq')
+```
+While the difference is statistically significant, it is small. We stick with
+the model that treats Year as a factor, altough that may obscure broader
+patterns.
+
+
+## Extracting Marginal Means
+This time, we have significant site by month interactions...
+
+
+```{r}
+emmip(do_warm_step, Site~year_f, type = 'response')
 ```
 
-Note that because some sites were not sampled in earlier years, this slope may be misleading.
 
-SO, it is easy to see that SEASONAL patterns and differences among SITES are much mor important than changes over time in salinity. 
+```{r}
+emmip(do_warm_step, month_f~year_f, type = 'response')
+```
+
+
+```{r}
+emmip(do_warm_step, Site~month_f, type = 'response')
+```
+
+That actually makes the pattern clear.  Four Sites, S05, S06b, S07 and S17
+show clear seasonal patterns, while the other sites do not. The strength of the 
+seasonal pattern varies by site.
+
+The question is, how can we simplify this complex set of relationships
+for presentation?  One alternative is to try to present marginal means, but 
+averaging across widly different months leads to large error. A better option is
+to focus only on results during one month of the year. We select July, because
+it is the month with the most severe dissolved oxygen challenges.
+
+### Sites
+```{r}
+emm_do_warm_months_sites <- emmeans(do_warm_step,
+                                     ~ Site | month_f ,
+                                     type = 'response')
+```
+
+The summary of an emmeans object is a dataframe. You can access estimates and 
+standard errors by name.
+```{r}
+s = summary(emm_do_warm_months_sites)
+names(s)
+```
+
+
+#### Graphic
+```{r fig.width = 4, fig.height = 3}
+s %>% 
+  filter(month_f == 'Jul') %>%
+  mutate(fprob = 1-prob,
+         fUCL = 1 - asymp.LCL,
+         fLCL = 1 - asymp.UCL) %>%
+ggplot( aes(Site, fprob)) +
+ 
+  geom_errorbar(aes(ymin = fLCL, ymax = fUCL),
+                width = .2) +
+  geom_point(size = 5, color = cbep_colors()[1]) +
+  ylab('Probability of Failing\nClass C DO Standard') +
+  ggtitle('July') +
+  theme_cbep(base_size = 12)
+```
+
+### Years
+```{r}
+emmeans(do_warm_step, ~ year_f, type = 'response')
+```
+Again, if not conditioned on months, the marginal probabilities are so close to
+zero that estimation is difficult, giving wide error bars. We get estimable 
+values if we condition by month.  We can then extract values for July again.
+
+```{r}
+emm_do_warm_years = emmeans(do_warm_step, ~ year_f | month_f, type = 'response')
+```
+
+#### Interaction Plot
+```{r}
+emmip(emm_do_warm_years, month_f ~ year_f  ) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+That highlights that July was the worst month and that 2016 was a bad year.
+There also appears to be a slow deterioration over the past ten years. The
+reularity of this graphic reflects the fact that he marginal means are estimated
+based on a MODEL, not on DATA.
+
+#### Graphic
+```{r fig.width = 4, fig.height = 3}
+s <- summary(emm_do_warm_years)
+s %>% 
+  filter(month_f == 'Jul') %>%
+  mutate(fprob = 1-prob,
+         fUCL = 1 - asymp.LCL,
+         fLCL = 1 - asymp.UCL) %>%
+ggplot( aes(as.numeric(year_f) + 2009, fprob)) +
+ 
+  geom_pointrange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  geom_line(color = cbep_colors()[3]) +
+  
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('') +
+  ggtitle('July Model') +
+  theme_cbep(base_size = 12)
+```
+
+## Model looking only at July Conditions
+There is some risk that by extracting July conditions froma  model that does not
+include all interactions, we are hiding detail.  One way to check is to develop
+a model that looks ONLY at July conditions.  This may be easier to explain to
+readers.
+```{r}
+exceeds_july <- exceeds %>%
+  filter(Month  == 7)
+
+do_july_full   <- glm(ClassCDO ~ year_f + Year + Site,
+               family = 'binomial',data = exceeds_july)
+do_july_step = step(do_july_full)
+```
+
+```{r}
+do_july_alt <- glm(ClassCDO ~ Year + Site,
+                   family = binomial,
+                   data = exceeds_july)
+```
+
+```{r}
+anova(do_july_alt, do_july_step,  test = 'Chisq')
+```
+
+```{r}
+anova(do_july_alt,  test = 'Chisq')
+```
+
+
+```{r}
+emm_do_july_years_link = emmeans(do_july_step, ~ year_f, type = 'link')
+emm_do_july_years_prob = emmeans(do_july_step, ~ year_f, type = 'response')
+
+
+inv_logit = function(.x) exp(.x)/(1+exp(.x))
+
+coef(do_july_alt)[2]
+mean(2010:2018)
+(lin_ests = ((1:9) - 5) * coef(do_july_alt)[2])
+inv_logit(lin_ests)
+```
+
+
+#### Graphic
+Various smoothers here make a point, but we should run formal analyses to 
+demonstrate that they are fair. Also, the linear smoother here does not do
+justice to the binomial GLM, which is linear not in probability space, but in 
+logit space.  WE have done our ow nback transforms in the following to
+emphasize the problem.
+```{r fig.width = 4, fig.height = 3}
+s <- summary(emm_do_july_years_prob)
+
+s %>% 
+  mutate(fprob = 1-prob,
+         fUCL = 1 - asymp.LCL,
+         fLCL = 1 - asymp.UCL) %>%
+ggplot( aes(as.numeric(year_f) + 2009, fprob)) +
+ 
+  geom_pointrange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  geom_line(color = cbep_colors()[3]) +
+  
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('') +
+  ggtitle('July Only') +
+  theme_cbep(base_size = 12)
+```
+```
+
+This proved to be unhelpful.  WE were stripping attributes to see if a simpler 
+data structure would work better.
+```{r}
+s2 <- s
+for (item in names(attributes(s2))[4:11]) {
+  attr(s2,item) <- NULL
+}
+class(s) <- 'data.frame'
+```
+
+```{r}
+s2 <- s2 %>% 
+  mutate(Year = as.numeric(year_f) + 2009) %>%
+  mutate(link = emmean,
+         link_UCL = asymp.UCL,
+         link_LCL = asymp.LCL) %>%
+  mutate(freq = inv_logit(link),
+         freq_UCL = inv_logit(link_UCL),
+         freq_LCL = inv_logit(link_LCL)) %>%
+  mutate(p = 1-freq,
+         UCL = 1-freq_LCL,
+         LCL = 1-freq_UCL)
+```
+
+
+
+```{r}
+
+  ggplot(s2,  aes(Year, p)) +
+  geom_point() +
+ 
+  # geom_linerange(aes(ymin = LCL, ymax = UCL),
+  #               color = cbep_colors()[1]) +
+  #geom_line(color = cbep_colors()[3]) +
+  geom_smooth(color = cbep_colors()[3],
+              method = 'lm',
+              formula = y~x,
+              se = FALSE) +
+  #geom_smooth(color = cbep_colors()[3]) +
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('') +
+  ggtitle('July Only') +
+  theme_cbep(base_size = 12) +
+  ylim(0,0.8)
+```
+That is  quite  different from the model presented before based on
+all the data, and zeroing in on July only. WE selected in constructing our
+model to omit year by month and year by site interactions, to simplify the
+analysis, but we swept some important detail under the rug that way.The larger
+model smooths out some of the variability between months among years, making the
+result look more structured.  By the same token, it buries the fact that July
+of 2018 was pretty rough, which we pick up here.
+
+
+
+
+
+
+
+###  Incorporating Predictors
+```{r}
+exceeds_warm_do_lag <- exceeds_warm %>%
+  select(-c(ClassBDO:AvgT)) %>%
+  mutate(yesterday = dplyr::lag(ClassCDO))
+```
+
+
+ 
+## Percent Saturation
+```{r}
+ps_full   <- glm(ClassC_PctSat ~ year_f + Year + Site +
+                   season + month_f + Site*month_f,
+               family = 'binomial',data = exceeds)
+ps_months <- glm(ClassC_PctSat ~ Year + Site + month_f,
+               family = 'binomial',data = exceeds)
+ps_seasons <- glm(ClassC_PctSat ~ Year + Site + season,
+               family = 'binomial',data = exceeds)
+ps_step = step(ps_full)
+```
+
+```{r}
+anova(ps_full, ps_step, ps_seasons, ps_months, test = 'Chisq')
+```
+
+
+
+```{r}
+anova(ps_step, test = 'Chisq')
+ 
+```
+ 
+ 
+ 

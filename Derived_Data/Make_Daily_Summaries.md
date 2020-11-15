@@ -43,14 +43,14 @@ library(lubridate)
 library(tidyverse)
 ```
 
-    ## -- Attaching packages ---------------------------------------------------------------------------------------------------------------- tidyverse 1.3.0 --
+    ## -- Attaching packages ----------------------------------------------------------------------------------- tidyverse 1.3.0 --
 
-    ## v ggplot2 3.3.2     v dplyr   1.0.0
-    ## v tibble  3.0.1     v stringr 1.4.0
-    ## v tidyr   1.1.0     v forcats 0.5.0
+    ## v ggplot2 3.3.2     v dplyr   1.0.2
+    ## v tibble  3.0.3     v stringr 1.4.0
+    ## v tidyr   1.1.2     v forcats 0.5.0
     ## v purrr   0.3.4
 
-    ## -- Conflicts ------------------------------------------------------------------------------------------------------------------- tidyverse_conflicts() --
+    ## -- Conflicts -------------------------------------------------------------------------------------- tidyverse_conflicts() --
     ## x lubridate::as.difftime() masks base::as.difftime()
     ## x lubridate::date()        masks base::date()
     ## x dplyr::filter()          masks stats::filter()
@@ -93,17 +93,25 @@ tenths of units.
 ``` r
 daily_data <- sonde_data %>%
   mutate(sdate = as.Date(floor_date(DT, unit='day'))) %>%
-  select(-DT, -Press, -Precip) %>%        # These items have a lot of missing values, slowing processing
+  select(-DT, -Press, -Precip) %>%   # These items have a lot of missing values, slowing processing
   group_by(Site, sdate) %>%
   summarize_all(list(Min=~suppressWarnings(min(., na.rm=TRUE)),
-                Max=~suppressWarnings(max(., na.rm=TRUE)),
-                Mean=~mean(., na.rm=TRUE),
-                Median=~median(., na.rm=TRUE),
-                SD=~sd(., na.rm=TRUE),
-                Iqr=~IQR(., na.rm=TRUE),
-                n=~sum(! is.na(.)))) %>%
+                     Max=~suppressWarnings(max(., na.rm=TRUE)),
+                     Mean=~mean(., na.rm=TRUE),
+                     Median=~median(., na.rm=TRUE),
+                     SD=~sd(., na.rm=TRUE),
+                     Iqr=~IQR(., na.rm=TRUE),
+                     n=~sum(! is.na(.)))) %>%
   mutate(Year = year(sdate)) %>%
   mutate(Month = month(sdate)) %>% ungroup()
+```
+
+Many minimums and maximums are replaced with Inf or -Inf, instead of NA.
+We need to get rid of all the Inf values.
+
+``` r
+daily_data <- daily_data %>%
+  mutate(across(where(is.numeric), function(.x) ifelse(is.infinite(.x), NA, .x)))
 ```
 
 ## Plot to confirm that did what we want….
@@ -200,8 +208,8 @@ Trace rainfall is included in the database by including a measurement
 value of zero for precipitation, and including the value “T” as the
 first element in PRCPattr.
 
-A total of 140 samples have the minimum value of measured rainfall of
-0.3 mm. (Reading the metadata, that value corresponds to converting
+A total of 140 samples have the minimum value of measured rainfall of `r
+m/10` mm. (Reading the metadata, that value corresponds to converting
 1/100th of an inch to mm \(0.254mm = 2.54(cm/inch)(10mm/cm) /100\), and
 rounding). A higher frequency of observations, 385 of them, were recoded
 as having trace amounts of rainfall.
@@ -255,7 +263,7 @@ plt
 
     ## Warning: Removed 2411 rows containing missing values (geom_point).
 
-![](Make_Daily_Summaries_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](Make_Daily_Summaries_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 That shows what is almost certainly a significant, but weak correlation.
 Salt is diluted by rainfall. Note the clear vertical separation by
 sites. Site provides a much clearer signal than does precipitation
@@ -265,7 +273,7 @@ out for a hierarchical model.
 # Export data
 
 ``` r
-write.csv(daily_data, 'Daily_Data.csv')
+write_csv(daily_data, 'Daily_Data.csv', na = '')
 ```
 
 # Calculate Daily Exceedences
@@ -279,7 +287,7 @@ We have only a few criteria to look at:
 
 ### Dissolved oxygen
 
-Maine’s B}Class B standards call for dissolved oxygen above 7 mg/l, with
+Maine’s Class B standards call for dissolved oxygen above 7 mg/l, with
 percent saturation above 75%. The Class C Standards, which apply to
 almost all of Long Creek call for dissolved oxygen above 5 mg/l, with
 percent saturation above 6.5 mg/l. In addition, the thirty day average
@@ -320,14 +328,14 @@ There are no criteria for maximum stream temperature, but we can back
 into thresholds based on research on thermal tolerance of brook trout in
 streams. A study from Michigan and Wisconsin, showed that trout are
 found in streams with daily mean water temperatures as high as 25.3°C,
-but only if the period of exceedance of that daily average temperature
+but only if the period of exceedence of that daily average temperature
 is short – only one day. Similarly, the one day daily maximum
 temperature above which trout were not found was 27.6°C.
 
 > Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). “Field‐Based
 > Estimates of Thermal Tolerance Limits for Trout: Incorporating
 > Exposure Time and Temperature Fluctuation.” Transactions of the
-> American Fisheries Society 136(2): 365-374.
+> American Fisheries Society 136(2):365-374.
 
 ``` r
 tMaxT <- 27.6   # Celsius
@@ -336,15 +344,22 @@ tAvgT <- 25.3
 
 ## Calculate Exceedances
 
+The “BOTH” values should turn up TRUE if the day passes both DO and
+Percent saturation standards, and FALSE if it fails either.
+
 ``` r
 exceedance_data <- daily_data %>%
   select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
-  mutate(ClassCDO = DO_Min>=tClassCDO, ClassBDO = DO_Min>=tClassBDO,
-         ClassC_PctSat = PctSat_Min>tClassCPctSat, ClassB_PctSat = PctSat_Min>tClassBPctSat,
-         ClassCBoth = ClassCDO & ClassC_PctSat,
-         ClassBBoth = ClassBDO & ClassB_PctSat,
-         ChlCCC = Chl_Max<=tChlCCC, ChlCMC = Chl_Max <= tChlCMC,
-         MaxT = T_Max <= tMaxT, AvgT = T_Mean <= tAvgT) %>%
+  mutate(ClassCDO = DO_Min >= tClassCDO, 
+         ClassBDO = DO_Min >= tClassBDO,
+         ClassC_PctSat = PctSat_Min > tClassCPctSat,
+         ClassB_PctSat = PctSat_Min > tClassBPctSat,
+         ClassCBoth =  ClassCDO & ClassC_PctSat, # TRUE = passes both
+         ClassBBoth =  ClassBDO & ClassB_PctSat, # TRUE = passes both
+         ChlCCC = Chl_Max <= tChlCCC,
+         ChlCMC = Chl_Max <= tChlCMC,
+         MaxT_ex = T_Max <= tMaxT,
+         AvgT_ex = T_Mean <= tAvgT) %>%
   select(-DO_Min, -PctSat_Min, -Chl_Max, -T_Max, -T_Mean)
 ```
 

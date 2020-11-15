@@ -32,28 +32,44 @@ sonde_data <- read_csv("Sonde_Data.csv",
 ```
 
 ## Calculate daily summaries
-This code generated an inordinate number of warnings, because minimums and maximums generate warnings whenever they are not well defined because of missing values.  Here, we wrap relevant function calls in "suppressWarnings()" to minimize that effect.
+This code generated an inordinate number of warnings, because minimums and
+maximums generate warnings whenever they are not well defined because of missing
+values.  Here, we wrap relevant function calls in "suppressWarnings()" to
+minimize that effect.
 
-The problem is not so much with generation of the warnings (which could be marginally useful), as the effect it has on slowing down execution of this code.  Without suppressing these warnings, the code takes well over half an hour to run,  With warnings suppressed, it only takes a minute or so.
+The problem is not so much with generation of the warnings (which could be
+marginally useful), as the effect it has on slowing down execution of this code.
+Without suppressing these warnings, the code takes well over half an hour to
+run,  With warnings suppressed, it only takes a minute or so.
 
-Note that we  downloaded the weather data in metric units, which is the default in our Python script for accessing NOAA weather data. Note that some data (like precipitation, snow depth, and temperature) are in tenths of units.
+Note that we  downloaded the weather data in metric units, which is the default
+in our Python script for accessing NOAA weather data. Note that some data (like
+precipitation, snow depth, and temperature) are in tenths of units.
   
 ```{r daily_summaries, warnings=FALSE}
 daily_data <- sonde_data %>%
   mutate(sdate = as.Date(floor_date(DT, unit='day'))) %>%
-  select(-DT, -Press, -Precip) %>%        # These items have a lot of missing values, slowing processing
+  select(-DT, -Press, -Precip) %>%   # These items have a lot of missing values, slowing processing
   group_by(Site, sdate) %>%
   summarize_all(list(Min=~suppressWarnings(min(., na.rm=TRUE)),
-                Max=~suppressWarnings(max(., na.rm=TRUE)),
-                Mean=~mean(., na.rm=TRUE),
-                Median=~median(., na.rm=TRUE),
-                SD=~sd(., na.rm=TRUE),
-                Iqr=~IQR(., na.rm=TRUE),
-                n=~sum(! is.na(.)))) %>%
+                     Max=~suppressWarnings(max(., na.rm=TRUE)),
+                     Mean=~mean(., na.rm=TRUE),
+                     Median=~median(., na.rm=TRUE),
+                     SD=~sd(., na.rm=TRUE),
+                     Iqr=~IQR(., na.rm=TRUE),
+                     n=~sum(! is.na(.)))) %>%
   mutate(Year = year(sdate)) %>%
   mutate(Month = month(sdate)) %>% ungroup()
            
 ```
+
+Many minimums and maximums are replaced with Inf or -Inf, instead of NA.  We
+need to get rid of all the Inf values.
+```{r}
+daily_data <- daily_data %>%
+  mutate(across(where(is.numeric), function(.x) ifelse(is.infinite(.x), NA, .x)))
+```
+
 
 ## Plot to confirm that did what we want....
 ```{r test_plot}
@@ -65,7 +81,8 @@ plt
 ```
 
 # Load Weather Data
-The majority of the data bundled with the Portland Jetport weather data is not relevant to our needs.
+The majority of the data bundled with the Portland Jetport weather data is not
+relevant to our needs.
 ```{r load_weather_data}
 sibfldnm    <- 'Original_Data'
 parent      <- dirname(getwd())
@@ -110,8 +127,11 @@ weather_data <- read_csv(fpath,
   rename(sdate = date)
 summary(weather_data)
 ```
+
 ## Address trace precipitation
-Trace rainfall is included in the database by including a measurement value of zero for precipitation, and including the value "T" as the first element in PRCPattr.
+Trace rainfall is included in the database by including a measurement value of
+zero for precipitation, and including the value "T" as the first element in
+PRCPattr.
 ```{r echo=FALSE}
 m <- min(weather_data$PRCP[weather_data$PRCP>0], na.rm=TRUE)
 nn <- sum(weather_data$PRCP==m, na.rm=TRUE)
@@ -123,16 +143,25 @@ l <- weather_data %>%
   pull(PRCP) %>%
   length()
 ```
-A total of `r nn` samples have the minimum value of measured rainfall of `r m/10` mm.  (Reading the metadata, that value corresponds to converting 1/100th of an inch to mm $0.254mm = 2.54(cm/inch)(10mm/cm) /100$, and rounding).  A higher frequency of observations, `r l` of them, were recoded as having trace amounts of rainfall.
+A total of `r nn` samples have the minimum value of measured rainfall of `r
+m/10` mm.  (Reading the metadata, that value corresponds to converting 1/100th
+of an inch to mm $0.254mm = 2.54(cm/inch)(10mm/cm) /100$, and rounding).  A
+higher frequency of observations, `r l` of them, were recoded as having trace
+amounts of rainfall.
 
-It is not obvious how to incorporate trace rainfall into analyses, or even whether it is important.  Here we create a flag for trace rainfall and add it to weather_data.  That way, later we can chose to incorporate it into analyses or not.
+It is not obvious how to incorporate trace rainfall into analyses, or even
+whether it is important.  Here we create a flag for trace rainfall and add it to
+weather_data.  That way, later we can chose to incorporate it into analyses or
+not.
 ```{r}
 weather_data <- weather_data %>%
   mutate(is_trace = substr(PRCPattr,1,1)=='T')
 ```
 
 # Combine data
-We combine data using "match" because we have data for multiple sites in daily_data, and therefore dates are not unique.  Match correctly assigns weather data by date.
+We combine data using "match" because we have data for multiple sites in
+daily_data, and therefore dates are not unique.  Match correctly assigns weather
+data by date.
 ```{r}
 yesterdayprecip <- c(NA, weather_data$PRCP[1 : length(weather_data$PRCP)-1])  # could have used dplyr::lag() here too.
 
@@ -142,6 +171,7 @@ daily_data <- daily_data %>%
          MaxT    = weather_data$TMAX [match(daily_data$sdate, weather_data$sdate)])
 rm(yesterdayprecip)
 ```
+
 ## Graphic to check....
 ```{r}
 plt <- ggplot(daily_data, aes(x=Precip, y=Chl_Median)) + 
@@ -153,21 +183,29 @@ plt <- ggplot(daily_data, aes(x=Precip, y=Chl_Median)) +
 
 plt
 ```
-That shows what is almost certainly a significant, but weak correlation. Salt is diluted by rainfall.  Note the clear vertical separation by sites.  Site provides a much clearer signal than does precipitation alone.  We could continue with this graphical analysis, but this calls out for a hierarchical model.
+That shows what is almost certainly a significant, but weak correlation. Salt is
+diluted by rainfall.  Note the clear vertical separation by sites.  Site
+provides a much clearer signal than does precipitation alone.  We could continue
+with this graphical analysis, but this calls out for a hierarchical model.
 
 # Export data
 ```{r}
-write.csv(daily_data, 'Daily_Data.csv')
+write_csv(daily_data, 'Daily_Data.csv', na = '')
 ```
 
 # Calculate Daily Exceedences
 ## Thresholds
-Here we convert daily data to "dates during which "fail" or "Did not Fail" for each water quality standard or threshold
+Here we convert daily data to "dates during which "fail" or "Did not Fail" for
+each water quality standard or threshold
 
 We have only a few criteria to look at:
 
 ### Dissolved oxygen
-Maine's Class B standards call for dissolved oxygen above 7 mg/l, with percent saturation above 75%.  The Class C Standards, which apply to almost all of Long Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 6.5 mg/l. In addition, the thirty day average dissolved oxygen must stay above 6.5 mg/l.  
+Maine's Class B standards call for dissolved oxygen above 7 mg/l, with percent
+saturation above 75%.  The Class C Standards, which apply to almost all of Long
+Creek call for dissolved oxygen above 5 mg/l, with percent saturation above 6.5
+mg/l. In addition, the thirty day average dissolved oxygen must stay above 6.5
+mg/l.
 ```{r}
 tClassCDO <- 5      # Units are mg/l or PPM
 tClassCPctSat <- 60
@@ -176,13 +214,16 @@ tClassBPctSat <- 75
 ```
 
 ### Chloride
-Maine uses established thresholds for both chronic and acute exposure to chloride. These are the "CCC and CMC" standards for chloride in freshwater. (06-096 CMR 584). These terms are defined in a footnote as follows:
+Maine uses established thresholds for both chronic and acute exposure to
+chloride. These are the "CCC and CMC" standards for chloride in freshwater.
+(06-096 CMR 584). These terms are defined in a footnote as follows:
 
-> The Criteria Maximum Concentration (CMC) is an estimate of the highest concentration
-> of a material in surface water to which an aquatic community can be exposed briefly
-> without resulting in an unacceptable effect. The Criterion Continuous Concentration (CCC)
-> is an estimate of the highest concentration of a material in surface water to which an
-> aquatic community can be exposed indefinitely without resulting in an unacceptable effect.   
+> The Criteria Maximum Concentration (CMC) is an estimate of the highest
+  concentration of a material in surface water to which an aquatic community can
+  be exposed briefly without resulting in an unacceptable effect. The Criterion
+  Continuous Concentration (CCC) is an estimate of the highest concentration of
+  a material in surface water to which an aquatic community can be exposed
+  indefinitely without resulting in an unacceptable effect.
 
 The relevant thresholds are:
 ```{r}
@@ -191,11 +232,18 @@ tChlCMC <- 860
 ```
 
 ### Temperature
-There are no criteria for maximum stream temperature, but we can back into thresholds based on research on thermal tolerance of brook trout in streams.  A study from Michigan and Wisconsin, showed that trout are found in streams with daily mean water temperatures as high as 25.3°C, but only if the period of exceedance of that daily average temperature is short -- only one day. Similarly, the one day daily maximum temperature above which trout were not found was 27.6°C.
+There are no criteria for maximum stream temperature, but we can back into
+thresholds based on research on thermal tolerance of brook trout in streams.  A
+study from Michigan and Wisconsin, showed that trout are found in streams with
+daily mean water temperatures as high as 25.3°C, but only if the period of
+exceedence of that daily average temperature is short -- only one day.
+Similarly, the one day daily maximum temperature above which trout were not
+found was 27.6°C.
 
->  Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). "Field‐Based Estimates of Thermal
->  Tolerance Limits for Trout: Incorporating Exposure Time and Temperature Fluctuation."
->  Transactions of the American Fisheries Society 136(2): 365-374.
+>  Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). "Field‐Based Estimates
+   of Thermal Tolerance Limits for Trout: Incorporating Exposure Time and
+   Temperature Fluctuation." Transactions of the American Fisheries Society
+   136(2):365-374.
 
 ```{r}
 tMaxT <- 27.6   # Celsius
@@ -203,6 +251,8 @@ tAvgT <- 25.3
 ```
 
 ## Calculate Exceedances
+The "BOTH" values should turn up TRUE if the day passes both DO and Percent
+saturation standards, and FALSE if it fails either. 
 ```{r}
 exceedance_data <- daily_data %>%
   select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
@@ -210,12 +260,12 @@ exceedance_data <- daily_data %>%
          ClassBDO = DO_Min >= tClassBDO,
          ClassC_PctSat = PctSat_Min > tClassCPctSat,
          ClassB_PctSat = PctSat_Min > tClassBPctSat,
-         ClassCBoth = ClassCDO & ClassC_PctSat,
-         ClassBBoth = ClassBDO & ClassB_PctSat,
+         ClassCBoth =  ClassCDO & ClassC_PctSat, # TRUE = passes both
+         ClassBBoth =  ClassBDO & ClassB_PctSat, # TRUE = passes both
          ChlCCC = Chl_Max <= tChlCCC,
          ChlCMC = Chl_Max <= tChlCMC,
-         MaxT = T_Max <= tMaxT,
-         AvgT = T_Mean <= tAvgT) %>%
+         MaxT_ex = T_Max <= tMaxT,
+         AvgT_ex = T_Mean <= tAvgT) %>%
   select(-DO_Min, -PctSat_Min, -Chl_Max, -T_Max, -T_Mean)
 
 ```
