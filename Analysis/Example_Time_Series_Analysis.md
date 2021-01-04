@@ -5,9 +5,8 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
 
   - [Introduction](#introduction)
   - [Import Libraries](#import-libraries)
-  - [Import Data](#import-data)
   - [Functions for Weighted SUms](#functions-for-weighted-sums)
-  - [Import Data](#import-data-1)
+  - [Import Data](#import-data)
       - [Folder References](#folder-references)
       - [Data on Sites and Impervious
         Cover](#data-on-sites-and-impervious-cover)
@@ -48,11 +47,13 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
         fit](#simplest-call-for-the-gamm-fit)
       - [Some Graphics Alternatives](#some-graphics-alternatives)
       - [An Alternative Model](#an-alternative-model)
-  - [Decomposing model results](#decomposing-model-results)
+  - [Decomposing Model Results](#decomposing-model-results)
       - [Raw Data](#raw-data)
       - [Year by Year](#year-by-year)
       - [Day of Year….](#day-of-year.)
       - [The Weather Term](#the-weather-term)
+      - [Graphic Decomposition of the Time
+        Series](#graphic-decomposition-of-the-time-series)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -140,13 +141,12 @@ load_cbep_fonts()
 theme_set(theme_cbep())
 ```
 
-# Import Data
-
 # Functions for Weighted SUms
 
 Here we create a couple of functions to calculate weighted sums of
 recent precipitation. We only use `expweights()`, below, but used both
-in early model explorations.
+in early model explorations. Further details are provided in the data
+import code in the `Derived_Data` folder.
 
   - `linweights()` Calculates a weighted sum from a time series. The
     weighted sum is based on a window of ten observations. The weighted
@@ -279,6 +279,15 @@ full_data <- read_csv(fpath,
   mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
   mutate(Yearf = factor(Year))
 #> Warning: Missing column names filled in: 'X1' [1]
+#> Warning: 3546 parsing failures.
+#> row    col               expected actual                                                                                                                     file
+#>   1 Precip no trailing characters   19.6 'C:/Users/curtis.bohlen/Documents/State of the Bay 2020/Data/A3. Stormwater/LCWMD_Monitoring/Derived_Data/Full_Data.csv'
+#>   2 Precip no trailing characters   25.7 'C:/Users/curtis.bohlen/Documents/State of the Bay 2020/Data/A3. Stormwater/LCWMD_Monitoring/Derived_Data/Full_Data.csv'
+#>   4 Precip no trailing characters   0.8  'C:/Users/curtis.bohlen/Documents/State of the Bay 2020/Data/A3. Stormwater/LCWMD_Monitoring/Derived_Data/Full_Data.csv'
+#>   6 Precip no trailing characters   7.4  'C:/Users/curtis.bohlen/Documents/State of the Bay 2020/Data/A3. Stormwater/LCWMD_Monitoring/Derived_Data/Full_Data.csv'
+#>   8 Precip no trailing characters   0.3  'C:/Users/curtis.bohlen/Documents/State of the Bay 2020/Data/A3. Stormwater/LCWMD_Monitoring/Derived_Data/Full_Data.csv'
+#> ... ...... ...................... ...... ........................................................................................................................
+#> See problems(...) for more details.
 rm(Site_IC_Data)
 rm(fn, fpath, parent, sibling, sibfldnm)
 ```
@@ -368,9 +377,9 @@ a[-2:10]
 #> Autocorrelations of series 'X', by lag
 #> 
 #>     -2     -1      0      1      2      3      4      5      6      7      8 
-#>  0.002  0.010 -0.147 -0.310 -0.252 -0.204 -0.171 -0.151 -0.132 -0.150 -0.122 
+#> -0.056 -0.070 -0.076 -0.163 -0.126 -0.111 -0.099 -0.100 -0.092 -0.081 -0.071 
 #>      9     10 
-#> -0.106 -0.095
+#> -0.066 -0.074
 b[-2:10]
 #> 
 #> Autocorrelations of series 'X', by lag
@@ -433,29 +442,29 @@ summary(Chl_llm_1)
 #> 
 #> Residuals:
 #>      Min       1Q   Median       3Q      Max 
-#> -2.06164 -0.15522  0.01582  0.15208  1.48375 
+#> -2.04013 -0.15067  0.01782  0.15514  1.42815 
 #> 
 #> Coefficients:
 #>                Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)    6.005018   0.036328 165.302  < 2e-16 ***
-#> Yearf2016      0.493768   0.030399  16.243  < 2e-16 ***
-#> Yearf2017      0.042340   0.031920   1.326  0.18509    
-#> Yearf2018      0.238760   0.032290   7.394 3.66e-13 ***
-#> lPrecip       -0.008188   0.005833  -1.404  0.16078    
-#> wlPrecip      -0.062841   0.005072 -12.391  < 2e-16 ***
-#> lD_Median     -2.173763   0.167743 -12.959  < 2e-16 ***
-#> poly(DOY, 5)1 -3.447396   0.668378  -5.158 3.17e-07 ***
-#> poly(DOY, 5)2  0.682681   0.907562   0.752  0.45215    
-#> poly(DOY, 5)3  0.296252   0.932590   0.318  0.75082    
-#> poly(DOY, 5)4  2.727882   0.806152   3.384  0.00075 ***
-#> poly(DOY, 5)5  0.049497   0.575504   0.086  0.93148    
+#> (Intercept)    5.946499   0.035409 167.937  < 2e-16 ***
+#> Yearf2016      0.496672   0.029646  16.753  < 2e-16 ***
+#> Yearf2017      0.033595   0.031168   1.078 0.281421    
+#> Yearf2018      0.224026   0.031615   7.086 3.07e-12 ***
+#> lPrecip       -0.024756   0.010793  -2.294 0.022065 *  
+#> wlPrecip      -0.135894   0.009589 -14.172  < 2e-16 ***
+#> lD_Median     -1.862046   0.172412 -10.800  < 2e-16 ***
+#> poly(DOY, 5)1 -2.795118   0.650651  -4.296 1.96e-05 ***
+#> poly(DOY, 5)2  0.156643   0.886241   0.177 0.859751    
+#> poly(DOY, 5)3  0.384732   0.908362   0.424 0.672014    
+#> poly(DOY, 5)4  2.606311   0.783693   3.326 0.000923 ***
+#> poly(DOY, 5)5  0.100522   0.560911   0.179 0.857817    
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> Residual standard error: 0.2794 on 784 degrees of freedom
+#> Residual standard error: 0.2725 on 784 degrees of freedom
 #>   (168 observations deleted due to missingness)
-#> Multiple R-squared:  0.7157, Adjusted R-squared:  0.7117 
-#> F-statistic: 179.4 on 11 and 784 DF,  p-value: < 2.2e-16
+#> Multiple R-squared:  0.7294, Adjusted R-squared:  0.7257 
+#> F-statistic: 192.2 on 11 and 784 DF,  p-value: < 2.2e-16
 ```
 
 Chloride levels vary year to year, even after addressing precipitation
@@ -478,28 +487,28 @@ summary(Chl_llm_2)
 #> 
 #> Residuals:
 #>      Min       1Q   Median       3Q      Max 
-#> -2.05246 -0.15602  0.01411  0.15203  1.49181 
+#> -2.02942 -0.15187  0.01717  0.15657  1.43591 
 #> 
 #> Coefficients:
-#>                              Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)                  9.738795   0.677815  14.368  < 2e-16 ***
-#> Yearf2016                    0.492908   0.030370  16.230  < 2e-16 ***
-#> Yearf2017                    0.039677   0.031605   1.255   0.2097    
-#> Yearf2018                    0.237566   0.032202   7.377 4.11e-13 ***
-#> lPrecip                     -0.008330   0.005820  -1.431   0.1528    
-#> wlPrecip                    -0.063037   0.005058 -12.463  < 2e-16 ***
-#> lD_Median                   -2.180119   0.167313 -13.030  < 2e-16 ***
-#> sin(2 * pi * DOY/365)       -0.410635   0.159950  -2.567   0.0104 *  
-#> cos(2 * pi * DOY/365)       -1.673432   0.264275  -6.332 4.07e-10 ***
-#> sin(2 * pi * DOY/(2 * 365)) -5.307105   0.931844  -5.695 1.74e-08 ***
-#> cos(2 * pi * DOY/(2 * 365))  0.860030   0.266473   3.227   0.0013 ** 
+#>                             Estimate Std. Error t value Pr(>|t|)    
+#> (Intercept)                  9.53849    0.65882  14.478  < 2e-16 ***
+#> Yearf2016                    0.49578    0.02961  16.745  < 2e-16 ***
+#> Yearf2017                    0.03047    0.03085   0.988  0.32364    
+#> Yearf2018                    0.22243    0.03152   7.056 3.76e-12 ***
+#> lPrecip                     -0.02519    0.01077  -2.339  0.01958 *  
+#> wlPrecip                    -0.13648    0.00957 -14.261  < 2e-16 ***
+#> lD_Median                   -1.86637    0.17195 -10.854  < 2e-16 ***
+#> sin(2 * pi * DOY/365)       -0.39589    0.15573  -2.542  0.01121 *  
+#> cos(2 * pi * DOY/365)       -1.64422    0.25695  -6.399 2.69e-10 ***
+#> sin(2 * pi * DOY/(2 * 365)) -5.12711    0.90620  -5.658 2.15e-08 ***
+#> cos(2 * pi * DOY/(2 * 365))  0.78858    0.25931   3.041  0.00244 ** 
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> Residual standard error: 0.2791 on 785 degrees of freedom
+#> Residual standard error: 0.2722 on 785 degrees of freedom
 #>   (168 observations deleted due to missingness)
-#> Multiple R-squared:  0.7158, Adjusted R-squared:  0.7122 
-#> F-statistic: 197.8 on 10 and 785 DF,  p-value: < 2.2e-16
+#> Multiple R-squared:  0.7298, Adjusted R-squared:  0.7263 
+#> F-statistic:   212 on 10 and 785 DF,  p-value: < 2.2e-16
 ```
 
 Fitting a seasonal pattern by sine and cosine functions again shows time
@@ -527,24 +536,24 @@ summary(Chl_llm_3)
 #> 
 #> Parametric coefficients:
 #>              Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)  5.992150   0.032318 185.410  < 2e-16 ***
-#> Yearf2016    0.491196   0.030419  16.148  < 2e-16 ***
-#> Yearf2017    0.035999   0.031859   1.130    0.259    
-#> Yearf2018    0.236884   0.032266   7.341 5.29e-13 ***
-#> lPrecip     -0.008180   0.005826  -1.404    0.161    
-#> wlPrecip    -0.062791   0.005063 -12.402  < 2e-16 ***
-#> lD_Median   -2.199679   0.167184 -13.157  < 2e-16 ***
+#> (Intercept)  5.941536   0.031442 188.970  < 2e-16 ***
+#> Yearf2016    0.494069   0.029601  16.691  < 2e-16 ***
+#> Yearf2017    0.026694   0.031047   0.860   0.3902    
+#> Yearf2018    0.220725   0.031536   6.999 5.53e-12 ***
+#> lPrecip     -0.025674   0.010763  -2.385   0.0173 *  
+#> wlPrecip    -0.137258   0.009575 -14.335  < 2e-16 ***
+#> lD_Median   -1.870617   0.171649 -10.898  < 2e-16 ***
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
 #> Approximate significance of smooth terms:
-#>          edf Ref.df    F p-value    
-#> s(DOY) 4.645  4.939 26.9  <2e-16 ***
+#>         edf Ref.df     F p-value    
+#> s(DOY) 4.67  4.947 24.77  <2e-16 ***
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> R-sq.(adj) =  0.712   Deviance explained = 71.6%
-#> GCV = 0.07918  Scale est. = 0.078021  n = 796
+#> R-sq.(adj) =  0.727   Deviance explained = 73.1%
+#> GCV = 0.075026  Scale est. = 0.073926  n = 796
 ```
 
 And using a generalized linear model again has little effect on our
@@ -565,32 +574,32 @@ summary(Chl_llm_4)
 #> 
 #> Residuals:
 #>      Min       1Q   Median       3Q      Max 
-#> -2.02834 -0.14646  0.00565  0.15114  1.57334 
+#> -1.99816 -0.14147  0.00334  0.15250  1.49891 
 #> 
 #> Coefficients:
 #>              Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)  5.963264   0.169554  35.170  < 2e-16 ***
-#> Yearf2016    0.491085   0.030660  16.017  < 2e-16 ***
-#> Yearf2017    0.032199   0.032303   0.997    0.319    
-#> Yearf2018    0.233144   0.032549   7.163 1.83e-12 ***
-#> lPrecip     -0.006935   0.005870  -1.181    0.238    
-#> wlPrecip    -0.063358   0.005170 -12.254  < 2e-16 ***
-#> lD_Median   -2.182009   0.167238 -13.047  < 2e-16 ***
-#> MonthApr     0.175749   0.167962   1.046    0.296    
-#> MonthMay     0.090184   0.166585   0.541    0.588    
-#> MonthJun     0.125976   0.166476   0.757    0.449    
-#> MonthJul     0.146932   0.167087   0.879    0.379    
-#> MonthAug     0.007865   0.166974   0.047    0.962    
-#> MonthSep    -0.135062   0.166595  -0.811    0.418    
-#> MonthOct    -0.143123   0.166040  -0.862    0.389    
-#> MonthNov     0.022209   0.166901   0.133    0.894    
+#> (Intercept)  5.785444   0.165781  34.898  < 2e-16 ***
+#> Yearf2016    0.492557   0.029764  16.549  < 2e-16 ***
+#> Yearf2017    0.020618   0.031423   0.656   0.5119    
+#> Yearf2018    0.214805   0.031760   6.763 2.64e-11 ***
+#> lPrecip     -0.024430   0.010821  -2.258   0.0242 *  
+#> wlPrecip    -0.140213   0.009775 -14.344  < 2e-16 ***
+#> lD_Median   -1.836363   0.171386 -10.715  < 2e-16 ***
+#> MonthApr     0.275260   0.163644   1.682   0.0930 .  
+#> MonthMay     0.189807   0.162216   1.170   0.2423    
+#> MonthJun     0.247480   0.162530   1.523   0.1282    
+#> MonthJul     0.289529   0.163310   1.773   0.0766 .  
+#> MonthAug     0.152178   0.163259   0.932   0.3516    
+#> MonthSep     0.004160   0.162632   0.026   0.9796    
+#> MonthOct    -0.004123   0.162093  -0.025   0.9797    
+#> MonthNov     0.152184   0.162758   0.935   0.3501    
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> Residual standard error: 0.281 on 781 degrees of freedom
+#> Residual standard error: 0.2729 on 781 degrees of freedom
 #>   (168 observations deleted due to missingness)
-#> Multiple R-squared:  0.7135, Adjusted R-squared:  0.7084 
-#> F-statistic: 138.9 on 14 and 781 DF,  p-value: < 2.2e-16
+#> Multiple R-squared:  0.7297, Adjusted R-squared:  0.7249 
+#> F-statistic: 150.6 on 14 and 781 DF,  p-value: < 2.2e-16
 ```
 
 This slightly lowers our estimates of precipitation and depth
@@ -608,20 +617,22 @@ anova(Chl_llm_2, Chl_llm_3, Chl_llm_1, Chl_llm_4)
 #> Model 3: log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + poly(DOY, 
 #>     5)
 #> Model 4: log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + Month
-#>   Res.Df    RSS      Df Sum of Sq      F Pr(>F)
-#> 1 785.00 61.161                                
-#> 2 784.36 61.196 0.64496  -0.03587              
-#> 3 784.00 61.194 0.35504   0.00271 0.0967 0.4757
-#> 4 781.00 61.658 3.00000  -0.46436
+#>   Res.Df    RSS      Df Sum of Sq      F Pr(>F)  
+#> 1 785.00 58.166                                  
+#> 2 784.33 57.982 0.67002  0.183985 3.6864 0.0696 .
+#> 3 784.00 58.232 0.32998 -0.249727                
+#> 4 781.00 58.177 3.00000  0.055363 0.2477 0.8630  
+#> ---
+#> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 ```
 
 ``` r
 AIC( Chl_llm_2, Chl_llm_3, Chl_llm_1,  Chl_llm_4)
 #>                 df      AIC
-#> Chl_llm_2 12.00000 240.3378
-#> Chl_llm_3 12.64496 242.0945
-#> Chl_llm_1 13.00000 242.7693
-#> Chl_llm_4 16.00000 254.7869
+#> Chl_llm_2 12.00000 200.3832
+#> Chl_llm_3 12.67002 199.2015
+#> Chl_llm_1 13.00000 203.2824
+#> Chl_llm_4 16.00000 208.5253
 ```
 
 The sine and cosine model is the best both by residual sums of squares,
@@ -670,7 +681,7 @@ rm(Chl_llm_1, Chl_llm_2, Chl_llm_3, Chl_llm_4)
 ``` r
 a<-acf(r, na.action=na.omit, main= 'Model Residuals', plot=FALSE)
 (theautocor <- a$acf[2])
-#> [1] 0.7972401
+#> [1] 0.7919441
 ```
 
 So we can use an auto regressive model of degree one, with a correlation
@@ -692,38 +703,38 @@ summary(the_gls)
 #>   Model: log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + poly(DOY,      3) 
 #>   Data: the_data 
 #>         AIC       BIC   logLik
-#>   -581.4211 -525.4176 302.7105
+#>   -627.6377 -571.6343 325.8189
 #> 
 #> Correlation Structure: AR(1)
 #>  Formula: ~1 
 #>  Parameter estimate(s):
 #>       Phi 
-#> 0.8455206 
+#> 0.8484855 
 #> 
 #> Coefficients:
 #>                   Value Std.Error   t-value p-value
-#> (Intercept)    5.988267 0.0810971  73.84066  0.0000
-#> Yearf2016      0.499647 0.0986455   5.06508  0.0000
-#> Yearf2017      0.058466 0.1018861   0.57384  0.5662
-#> Yearf2018      0.323752 0.1076237   3.00818  0.0027
-#> lPrecip       -0.002104 0.0034030  -0.61835  0.5365
-#> wlPrecip      -0.045333 0.0053922  -8.40716  0.0000
-#> lD_Median     -2.711460 0.1126199 -24.07621  0.0000
-#> poly(DOY, 3)1 -2.626626 0.8229562  -3.19170  0.0015
-#> poly(DOY, 3)2  1.254217 0.9467278   1.32479  0.1856
-#> poly(DOY, 3)3  1.518062 0.7510401   2.02128  0.0436
+#> (Intercept)    5.978802 0.0797712  74.94941  0.0000
+#> Yearf2016      0.485303 0.0974751   4.97874  0.0000
+#> Yearf2017      0.064246 0.1005606   0.63888  0.5231
+#> Yearf2018      0.324886 0.1066033   3.04761  0.0024
+#> lPrecip       -0.009921 0.0063049  -1.57352  0.1160
+#> wlPrecip      -0.104439 0.0100351 -10.40737  0.0000
+#> lD_Median     -2.571378 0.1129370 -22.76824  0.0000
+#> poly(DOY, 3)1 -2.396019 0.8117233  -2.95177  0.0033
+#> poly(DOY, 3)2  0.972223 0.9361413   1.03854  0.2993
+#> poly(DOY, 3)3  1.558122 0.7403107   2.10469  0.0356
 #> 
 #>  Correlation: 
 #>               (Intr) Yr2016 Yr2017 Yr2018 lPrecp wlPrcp lD_Mdn p(DOY,3)1
-#> Yearf2016     -0.735                                                    
-#> Yearf2017     -0.662  0.543                                             
-#> Yearf2018     -0.728  0.593  0.561                                      
-#> lPrecip       -0.099 -0.014 -0.018 -0.014                               
-#> wlPrecip      -0.143 -0.013 -0.033 -0.020  0.653                        
-#> lD_Median     -0.105  0.053 -0.019 -0.066 -0.397 -0.492                 
-#> poly(DOY, 3)1 -0.057  0.060  0.009  0.076  0.027  0.023 -0.010          
-#> poly(DOY, 3)2  0.255 -0.394  0.016 -0.283  0.013  0.019 -0.088 -0.013   
-#> poly(DOY, 3)3 -0.050 -0.017 -0.031  0.178 -0.007 -0.045  0.006 -0.521   
+#> Yearf2016     -0.741                                                    
+#> Yearf2017     -0.667  0.541                                             
+#> Yearf2018     -0.735  0.593  0.562                                      
+#> lPrecip       -0.071  0.000 -0.011 -0.008                               
+#> wlPrecip      -0.103  0.005 -0.028 -0.015  0.676                        
+#> lD_Median     -0.113  0.042 -0.021 -0.065 -0.444 -0.534                 
+#> poly(DOY, 3)1 -0.056  0.065  0.017  0.079 -0.008 -0.016  0.012          
+#> poly(DOY, 3)2  0.255 -0.399  0.017 -0.285  0.035  0.047 -0.100 -0.015   
+#> poly(DOY, 3)3 -0.052 -0.020 -0.034  0.178 -0.009 -0.042  0.008 -0.528   
 #>               p(DOY,3)2
 #> Yearf2016              
 #> Yearf2017              
@@ -733,13 +744,13 @@ summary(the_gls)
 #> lD_Median              
 #> poly(DOY, 3)1          
 #> poly(DOY, 3)2          
-#> poly(DOY, 3)3 -0.039   
+#> poly(DOY, 3)3 -0.041   
 #> 
 #> Standardized residuals:
 #>         Min          Q1         Med          Q3         Max 
-#> -6.65770231 -0.51617248 -0.03930264  0.46561631  5.71638961 
+#> -6.69128071 -0.51755903 -0.03470126  0.44842346  5.88052507 
 #> 
-#> Residual standard error: 0.3053902 
+#> Residual standard error: 0.2997056 
 #> Degrees of freedom: 796 total; 786 residual
 ```
 
@@ -759,12 +770,12 @@ coverage, or otherwise handle that.
 anova(the_gls)
 #> Denom. DF: 786 
 #>              numDF   F-value p-value
-#> (Intercept)      1 22205.511  <.0001
-#> Yearf            3    31.028  <.0001
-#> lPrecip          1     7.702  0.0056
-#> wlPrecip         1   540.553  <.0001
-#> lD_Median        1   580.220  <.0001
-#> poly(DOY, 3)     3     4.023  0.0074
+#> (Intercept)      1 22584.876  <.0001
+#> Yearf            3    32.265  <.0001
+#> lPrecip          1     8.938  0.0029
+#> wlPrecip         1   713.685  <.0001
+#> lD_Median        1   517.919  <.0001
+#> poly(DOY, 3)     3     3.398  0.0175
 ```
 
 Notice that the effect of TODAY’s rainfall is not statistically
@@ -892,12 +903,12 @@ in complex ways.
 
 ``` r
 anova(gam_fit_1$lme, gam_fit_2$lme, gam_fit_3$lme, gam_fit_4$lme, gam_fit_5$lme)
-#>               Model df       AIC       BIC   logLik   Test   L.Ratio p-value
-#> gam_fit_1$lme     1 11 -609.0966 -557.6210 315.5483                         
-#> gam_fit_2$lme     2 12 -609.0529 -552.8977 316.5264 1 vs 2  1.956282  0.1619
-#> gam_fit_3$lme     3 13 -634.8369 -574.0021 330.4185 2 vs 3 27.784042  <.0001
-#> gam_fit_4$lme     4 14 -636.1180 -570.6036 332.0590 3 vs 4  3.281060  0.0701
-#> gam_fit_5$lme     5 15 -635.1585 -564.9645 332.5792 4 vs 5  1.040508  0.3077
+#>               Model df       AIC       BIC   logLik   Test  L.Ratio p-value
+#> gam_fit_1$lme     1 11 -653.4984 -602.0228 337.7492                        
+#> gam_fit_2$lme     2 12 -651.4995 -595.3443 337.7498 1 vs 2  0.00114  0.9731
+#> gam_fit_3$lme     3 13 -690.1336 -629.2988 358.0668 2 vs 3 40.63407  <.0001
+#> gam_fit_4$lme     4 14 -690.1214 -624.6070 359.0607 3 vs 4  1.98779  0.1586
+#> gam_fit_5$lme     5 15 -695.4101 -625.2161 362.7050 4 vs 5  7.28870  0.0069
 ```
 
 Models 3,4, and 5 provide very similar (not statistically significant)
@@ -933,18 +944,18 @@ gls_fit_3 <- gls(log(Chl_Median) ~ Yearf + DOY +
 
 ``` r
 AIC(gls_fit_3)
-#> [1] -636.8369
+#> [1] -692.1336
 anova(gls_fit_3)
 #> Denom. DF: 786 
 #>                    numDF   F-value p-value
-#> (Intercept)            1 21208.613  <.0001
-#> Yearf                  3    30.973  <.0001
-#> DOY                    1     8.181  0.0043
-#> lPrecip                1     7.553  0.0061
-#> wlPrecip               1   554.969  <.0001
-#> lD_Median              1   599.043  <.0001
-#> lPrecip:lD_Median      1    15.048  0.0001
-#> wlPrecip:lD_Median     1    15.135  0.0001
+#> (Intercept)            1 21244.278  <.0001
+#> Yearf                  3    32.331  <.0001
+#> DOY                    1     8.116  0.0045
+#> lPrecip                1     9.294  0.0024
+#> wlPrecip               1   739.213  <.0001
+#> lD_Median              1   546.101  <.0001
+#> lPrecip:lD_Median      1    30.552  <.0001
+#> wlPrecip:lD_Median     1    10.986  0.0010
 ```
 
 ``` r
@@ -959,16 +970,16 @@ anova(gam_fit_3$gam)
 #> 
 #> Parametric Terms:
 #>                    df     F  p-value
-#> Yearf               3 18.02 2.56e-11
-#> lPrecip             1 13.48 0.000258
-#> wlPrecip            1 12.64 0.000399
-#> lD_Median           1 49.20 5.00e-12
-#> lPrecip:lD_Median   1 28.11 1.49e-07
-#> wlPrecip:lD_Median  1 15.15 0.000107
+#> Yearf               3 16.79 1.41e-10
+#> lPrecip             1 14.69 0.000137
+#> wlPrecip            1 34.77 5.50e-09
+#> lD_Median           1 48.95 5.64e-12
+#> lPrecip:lD_Median   1 41.58 1.97e-10
+#> wlPrecip:lD_Median  1 11.00 0.000953
 #> 
 #> Approximate significance of smooth terms:
 #>        edf Ref.df     F p-value
-#> s(DOY)   1      1 5.533  0.0189
+#> s(DOY)   1      1 3.627  0.0572
 ```
 
 There is some evidence or problems with colinearity here, where
@@ -979,7 +990,7 @@ p1 <- predict(gls_fit_3)
 formula(gls_fit_3)
 #> log(Chl_Median) ~ Yearf + DOY + lPrecip + wlPrecip + lD_Median + 
 #>     lPrecip:lD_Median + wlPrecip:lD_Median
-#> <environment: 0x0000000027253960>
+#> <environment: 0x0000000028dd4d40>
 p2 <- predict(gam_fit_1$gam)
 formula(gam_fit_1$gam)
 #> log(Chl_Median) ~ Yearf + lPrecip + wlPrecip + lD_Median + s(DOY)
@@ -999,11 +1010,11 @@ formula(gam_fit_5$gam)
 ``` r
 cor(cbind(p1, p2,p3,p4,p5))
 #>           p1        p2        p3        p4        p5
-#> p1 1.0000000 0.9957793 1.0000000 0.9998283 0.9997861
-#> p2 0.9957793 1.0000000 0.9957793 0.9953745 0.9958131
-#> p3 1.0000000 0.9957793 1.0000000 0.9998283 0.9997861
-#> p4 0.9998283 0.9953745 0.9998283 1.0000000 0.9999339
-#> p5 0.9997861 0.9958131 0.9997861 0.9999339 1.0000000
+#> p1 1.0000000 0.9955140 1.0000000 0.9998997 0.9995551
+#> p2 0.9955140 1.0000000 0.9955140 0.9951448 0.9959653
+#> p3 1.0000000 0.9955140 1.0000000 0.9998997 0.9995551
+#> p4 0.9998997 0.9951448 0.9998997 1.0000000 0.9995966
+#> p5 0.9995551 0.9959653 0.9995551 0.9995966 1.0000000
 ```
 
 So, all models are providing predictions with better than 99.5%
@@ -1106,13 +1117,13 @@ gam_fit_3.6 <- gamm(log(Chl_Median) ~ Yearf +
 ``` r
 anova(gam_fit_3.1$lme, gam_fit_3.2$lme, gam_fit_3.3$lme, 
       gam_fit_3.4$lme,  gam_fit_3.5$lme, gam_fit_3.6$lme)
-#>                 Model df       AIC       BIC   logLik   Test   L.Ratio p-value
-#> gam_fit_3.1$lme     1 13 -634.8369 -574.0021 330.4185                         
-#> gam_fit_3.2$lme     2 13 -644.1595 -583.3247 335.0798                         
-#> gam_fit_3.3$lme     3 13 -643.2088 -582.3740 334.6044                         
-#> gam_fit_3.4$lme     4 16 -730.9879 -656.1144 381.4940 3 vs 4  93.77912  <.0001
-#> gam_fit_3.5$lme     5 16 -650.3644 -575.4908 341.1822                         
-#> gam_fit_3.6$lme     6 20 -757.0675 -663.4755 398.5338 5 vs 6 114.70311  <.0001
+#>                 Model df       AIC       BIC   logLik   Test  L.Ratio p-value
+#> gam_fit_3.1$lme     1 13 -690.1336 -629.2988 358.0668                        
+#> gam_fit_3.2$lme     2 13 -682.3065 -621.4717 354.1533                        
+#> gam_fit_3.3$lme     3 13 -698.1129 -637.2781 362.0565                        
+#> gam_fit_3.4$lme     4 16 -765.2922 -690.4186 398.6461 3 vs 4 73.17927  <.0001
+#> gam_fit_3.5$lme     5 16 -698.0753 -623.2017 365.0376                        
+#> gam_fit_3.6$lme     6 20 -786.4855 -692.8935 413.2427 5 vs 6 96.41018  <.0001
 ```
 
 So, model 3.4 and 3.6 are the best, and they are also better than the
@@ -1132,26 +1143,26 @@ summary(gam_fit_3.6$gam)
 #> 
 #> Parametric coefficients:
 #>             Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)  5.29407    0.07925  66.805  < 2e-16 ***
-#> Yearf2016    0.56125    0.09054   6.199 9.22e-10 ***
-#> Yearf2017    0.10765    0.10363   1.039  0.29926    
-#> Yearf2018    0.34046    0.10694   3.184  0.00151 ** 
+#> (Intercept)  5.30814    0.07897  67.213  < 2e-16 ***
+#> Yearf2016    0.54640    0.08993   6.076 1.93e-09 ***
+#> Yearf2017    0.11230    0.10314   1.089  0.27661    
+#> Yearf2018    0.31433    0.10676   2.944  0.00333 ** 
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
 #> Approximate significance of smooth terms:
 #>                          edf Ref.df      F  p-value    
-#> ti(lPrecip)            3.912  3.912 12.788  < 2e-16 ***
-#> ti(wlPrecip)           1.000  1.000 25.744 7.11e-07 ***
-#> ti(lD_Median)          3.538  3.538 96.624  < 2e-16 ***
-#> ti(lPrecip,lD_Median)  2.926  2.926 40.110  < 2e-16 ***
-#> ti(wlPrecip,lD_Median) 1.000  1.000 35.244  < 2e-16 ***
-#> s(DOY)                 1.000  1.000  7.091  0.00791 ** 
+#> ti(lPrecip)            3.854  3.854  8.023 2.73e-06 ***
+#> ti(wlPrecip)           1.000  1.000 43.525  < 2e-16 ***
+#> ti(lD_Median)          3.530  3.530 69.557  < 2e-16 ***
+#> ti(lPrecip,lD_Median)  2.775  2.775 36.808  < 2e-16 ***
+#> ti(wlPrecip,lD_Median) 1.466  1.466 20.314 8.05e-07 ***
+#> s(DOY)                 1.000  1.000  5.125   0.0239 *  
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> R-sq.(adj) =  0.703   
-#>   Scale est. = 0.086235  n = 796
+#> R-sq.(adj) =  0.711   
+#>   Scale est. = 0.084617  n = 796
 ```
 
 According to that, all three smooth terms and both interaction terms are
@@ -1196,12 +1207,12 @@ gam.check(gam_fit_3.6$gam)
     #> indicate that k is too low, especially if edf is close to k'.
     #> 
     #>                           k'   edf k-index p-value    
-    #> ti(lPrecip)             4.00  3.91    0.51  <2e-16 ***
-    #> ti(wlPrecip)            4.00  1.00    1.01    0.60    
-    #> ti(lD_Median)           4.00  3.54    0.89  <2e-16 ***
-    #> ti(lPrecip,lD_Median)  16.00  2.93    0.89  <2e-16 ***
-    #> ti(wlPrecip,lD_Median) 16.00  1.00    0.83  <2e-16 ***
-    #> s(DOY)                  9.00  1.00    1.07    0.99    
+    #> ti(lPrecip)             4.00  3.85    0.49  <2e-16 ***
+    #> ti(wlPrecip)            4.00  1.00    0.97    0.20    
+    #> ti(lD_Median)           4.00  3.53    0.89  <2e-16 ***
+    #> ti(lPrecip,lD_Median)  16.00  2.77    0.85  <2e-16 ***
+    #> ti(wlPrecip,lD_Median) 16.00  1.47    0.85  <2e-16 ***
+    #> s(DOY)                  9.00  1.00    1.06    0.96    
     #> ---
     #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
@@ -1257,15 +1268,15 @@ anova(gam_fit_3.7$gam)
 #> 
 #> Parametric Terms:
 #>          df      F  p-value
-#> Yearf     3 17.736 3.82e-11
-#> wlPrecip  1 52.484 1.04e-12
-#> DOY       1  7.575  0.00606
+#> Yearf     3 16.167 3.35e-10
+#> wlPrecip  1 92.639  < 2e-16
+#> DOY       1  5.908   0.0153
 #> 
 #> Approximate significance of smooth terms:
-#>                         edf Ref.df       F p-value
-#> ti(lPrecip)           3.862  3.862   9.199 5.6e-07
-#> ti(lD_Median)         3.678  3.678 141.180 < 2e-16
-#> ti(lPrecip,lD_Median) 2.958  2.958  28.892 < 2e-16
+#>                         edf Ref.df       F  p-value
+#> ti(lPrecip)           3.816  3.816   8.615 2.81e-06
+#> ti(lD_Median)         3.644  3.644 105.440  < 2e-16
+#> ti(lPrecip,lD_Median) 6.857  6.857  11.513  < 2e-16
 ```
 
 ``` r
@@ -1315,10 +1326,10 @@ gam_fit_3.9 <- gamm(log(Chl_Median) ~ Yearf +
 ``` r
 anova(gam_fit_3.4$lme, gam_fit_3.7$lme,  gam_fit_3.8$lme,  gam_fit_3.9$lme)
 #>                 Model df       AIC       BIC   logLik   Test  L.Ratio p-value
-#> gam_fit_3.4$lme     1 16 -730.9879 -656.1144 381.4940                        
-#> gam_fit_3.7$lme     2 15 -732.9879 -662.7940 381.4940 1 vs 2  0.00000  0.9999
-#> gam_fit_3.8$lme     3 13 -725.4400 -664.6052 375.7200 2 vs 3 11.54792  0.0031
-#> gam_fit_3.9$lme     4 11 -698.8733 -647.3977 360.4366 3 vs 4 30.56677  <.0001
+#> gam_fit_3.4$lme     1 16 -765.2922 -690.4186 398.6461                        
+#> gam_fit_3.7$lme     2 15 -767.2922 -697.0982 398.6461 1 vs 2  0.00000  0.9996
+#> gam_fit_3.8$lme     3 13 -766.4020 -705.5672 396.2010 2 vs 3  4.89016  0.0867
+#> gam_fit_3.9$lme     4 11 -752.8197 -701.3441 387.4099 3 vs 4 17.58232  0.0002
 ```
 
 Model 3.7 is the “best” model by AIC, and 3.8 is the “best” by BIC. The
@@ -1359,10 +1370,10 @@ formula(gam_fit_3.8$gam)
 ``` r
 cor(cbind(p4, p5, p6, p8))
 #>           p4        p5        p6        p8
-#> p4 1.0000000 0.9912209 0.9956853 0.9994195
-#> p5 0.9912209 1.0000000 0.9923301 0.9915975
-#> p6 0.9956853 0.9923301 1.0000000 0.9955980
-#> p8 0.9994195 0.9915975 0.9955980 1.0000000
+#> p4 1.0000000 0.9927963 0.9957100 0.9997131
+#> p5 0.9927963 1.0000000 0.9942981 0.9931922
+#> p6 0.9957100 0.9942981 1.0000000 0.9956240
+#> p8 0.9997131 0.9931922 0.9956240 1.0000000
 ```
 
 All of our predictions are highly correlated with each other, so it can
@@ -1421,43 +1432,43 @@ summary(gls_fit)
 #> Generalized least squares fit by REML
 #>   Model: log(Chl_Median) ~ Yearf + DOY + lPrecip + wlPrecip + lD_Median +      lPrecip:lD_Median 
 #>   Data: the_data 
-#>         AIC       BIC   logLik
-#>   -567.9333 -516.5828 294.9666
+#>         AIC      BIC   logLik
+#>   -630.5585 -579.208 326.2792
 #> 
 #> Correlation Structure: AR(1)
 #>  Formula: ~1 
 #>  Parameter estimate(s):
 #>       Phi 
-#> 0.8511945 
+#> 0.8565231 
 #> 
 #> Coefficients:
 #>                       Value  Std.Error   t-value p-value
-#> (Intercept)        6.149562 0.12481145  49.27082  0.0000
-#> Yearf2016          0.561848 0.09237638   6.08216  0.0000
-#> Yearf2017          0.051009 0.10415587   0.48974  0.6245
-#> Yearf2018          0.310684 0.10461970   2.96965  0.0031
-#> DOY               -0.001001 0.00040738  -2.45741  0.0142
-#> lPrecip            0.012213 0.00502790   2.42904  0.0154
-#> wlPrecip          -0.048809 0.00545183  -8.95269  0.0000
-#> lD_Median         -2.399589 0.13608540 -17.63297  0.0000
-#> lPrecip:lD_Median -0.067377 0.01752430  -3.84477  0.0001
+#> (Intercept)        6.095005 0.12311809  49.50536  0.0000
+#> Yearf2016          0.535440 0.09119861   5.87114  0.0000
+#> Yearf2017          0.055538 0.10306475   0.53887  0.5901
+#> Yearf2018          0.289559 0.10420262   2.77881  0.0056
+#> DOY               -0.000818 0.00039855  -2.05262  0.0404
+#> lPrecip            0.025755 0.00898758   2.86557  0.0043
+#> wlPrecip          -0.117038 0.01015032 -11.53049  0.0000
+#> lD_Median         -2.123562 0.13630311 -15.57970  0.0000
+#> lPrecip:lD_Median -0.160797 0.02927332  -5.49294  0.0000
 #> 
 #>  Correlation: 
 #>                   (Intr) Yr2016 Yr2017 Yr2018 DOY    lPrecp wlPrcp lD_Mdn
-#> Yearf2016         -0.500                                                 
-#> Yearf2017         -0.446  0.599                                          
-#> Yearf2018         -0.604  0.561  0.610                                   
-#> DOY               -0.766  0.056  0.004  0.211                            
-#> lPrecip           -0.100 -0.006 -0.038 -0.042  0.009                     
-#> wlPrecip          -0.086 -0.007 -0.030  0.001  0.004  0.296              
-#> lD_Median         -0.070  0.016 -0.034 -0.104 -0.016  0.207 -0.502       
-#> lPrecip:lD_Median  0.056  0.000  0.034  0.047  0.013 -0.741  0.185 -0.575
+#> Yearf2016         -0.508                                                 
+#> Yearf2017         -0.459  0.601                                          
+#> Yearf2018         -0.616  0.560  0.613                                   
+#> DOY               -0.766  0.063  0.016  0.223                            
+#> lPrecip           -0.079  0.008 -0.033 -0.039 -0.005                     
+#> wlPrecip          -0.029  0.026 -0.025  0.019 -0.041  0.285              
+#> lD_Median         -0.093 -0.002 -0.034 -0.110  0.016  0.178 -0.555       
+#> lPrecip:lD_Median  0.068  0.004  0.032  0.057 -0.005 -0.725  0.233 -0.587
 #> 
 #> Standardized residuals:
 #>         Min          Q1         Med          Q3         Max 
-#> -6.76385876 -0.46427235  0.01815679  0.40457882  5.59854472 
+#> -6.70174742 -0.47639383  0.01389403  0.37853697  5.51176912 
 #> 
-#> Residual standard error: 0.3088231 
+#> Residual standard error: 0.3025428 
 #> Degrees of freedom: 796 total; 787 residual
 ```
 
@@ -1466,9 +1477,9 @@ p_gam <- predict(gam_fit$gam)
 p_gls <- predict(gls_fit)
 
 cor(cbind(p_gam, p_gls))
-#>           p_gam     p_gls
-#> p_gam 1.0000000 0.9897478
-#> p_gls 0.9897478 1.0000000
+#>          p_gam    p_gls
+#> p_gam 1.000000 0.991541
+#> p_gls 0.991541 1.000000
 ```
 
 So, that GLS fit is slightly different, especially at lower predicted
@@ -1503,10 +1514,10 @@ unevaluated.
 t1 <- emmeans(gam_fit, ~Yearf, data = the_data)
 t1
 #>  Yearf emmean     SE  df lower.CL upper.CL
-#>  2015    5.26 0.0876 773     5.08     5.43
-#>  2016    5.83 0.0707 773     5.69     5.97
-#>  2017    5.35 0.0774 773     5.20     5.50
-#>  2018    5.61 0.0747 773     5.46     5.76
+#>  2015    5.29 0.0867 774     5.12     5.46
+#>  2016    5.83 0.0699 774     5.69     5.97
+#>  2017    5.38 0.0765 774     5.23     5.53
+#>  2018    5.62 0.0739 774     5.47     5.76
 #> 
 #> Confidence level used: 0.95
 ```
@@ -1526,9 +1537,9 @@ my_rg <- update(ref_grid(gam_fit, data = the_data),
 my_rg
 #> 'emmGrid' object with variables:
 #>     Yearf = 2015, 2016, 2017, 2018
-#>     wlPrecip = 4.099
+#>     wlPrecip = 1.9049
 #>     DOY = 203.41
-#>     lPrecip = 1.1905
+#>     lPrecip = 0.55493
 #>     lD_Median = 0.2011
 #> Transformation: "log"
 ```
@@ -1537,10 +1548,10 @@ my_rg
 tt1 <- emmeans(my_rg, "Yearf", type = 'response')
 summary(tt1)
 #>  Yearf response   SE  df lower.CL upper.CL
-#>  2015       192 16.8 773      161      228
-#>  2016       341 24.1 773      297      392
-#>  2017       211 16.3 773      181      246
-#>  2018       273 20.4 773      236      316
+#>  2015       198 17.2 774      167      235
+#>  2016       340 23.8 774      297      390
+#>  2017       218 16.7 774      188      253
+#>  2018       275 20.3 774      238      318
 #> 
 #> Confidence level used: 0.95 
 #> Intervals are back-transformed from the log scale
@@ -1576,7 +1587,7 @@ my_rg_2 <- update(ref_grid(gam_fit, data = the_data,
 my_rg_2
 #> 'emmGrid' object with variables:
 #>     Yearf = 2015, 2016, 2017, 2018
-#>     wlPrecip = 3.7137
+#>     wlPrecip = 1.6093
 #>     DOY = 200
 #>     lPrecip = 0
 #>     lD_Median = 0.16805
@@ -1587,10 +1598,10 @@ my_rg_2
 tt2 <- emmeans(my_rg_2, "Yearf", type = 'response')
 summary(tt2)
 #>  Yearf response   SE  df lower.CL upper.CL
-#>  2015       216 18.7 773      183      256
-#>  2016       385 26.8 773      335      441
-#>  2017       238 18.3 773      205      277
-#>  2018       308 22.7 773      267      356
+#>  2015       222 19.0 774      188      263
+#>  2016       382 26.2 774      333      437
+#>  2017       244 18.6 774      210      284
+#>  2018       308 22.5 774      267      356
 #> 
 #> Confidence level used: 0.95 
 #> Intervals are back-transformed from the log scale
@@ -1625,10 +1636,10 @@ my_rg_3
 tt3 <- emmeans(my_rg_3, "Yearf", type = 'response')
 summary(tt3)
 #>  Yearf response   SE  df lower.CL upper.CL
-#>   2015      209 18.5 773      175      248
-#>   2016      371 27.0 773      322      428
-#>   2017      230 18.2 773      197      269
-#>   2018      297 22.2 773      257      344
+#>   2015      192 16.6 774      162      228
+#>   2016      330 23.0 774      288      378
+#>   2017      211 16.1 774      182      245
+#>   2018      267 19.5 774      231      308
 #> 
 #> Confidence level used: 0.95 
 #> Intervals are back-transformed from the log scale
@@ -1647,10 +1658,10 @@ plot(tt2, horizontal = FALSE, comparisons=TRUE) +
 ``` r
 pwpm(tt2)
 #>       2015   2016   2017   2018
-#> 2015 [216] <.0001 0.8174 0.0113
-#> 2016 0.562  [385] <.0001 0.1223
-#> 2017 0.908  1.615  [238] 0.0371
-#> 2018 0.702  1.248  0.773  [308]
+#> 2015 [222] <.0001 0.8222 0.0217
+#> 2016 0.582  [382] <.0001 0.1404
+#> 2017 0.910  1.563  [244] 0.0680
+#> 2018 0.721  1.237  0.792  [308]
 #> 
 #> Row and column labels: Yearf
 #> Upper triangle: P values   adjust = "tukey"
@@ -1671,10 +1682,10 @@ for our purposes, the results are similar.
               cov.reduce=median, at = list(DOY = 200),
               type = 'response')
 #>  Yearf response   SE  df lower.CL upper.CL
-#>  2015       220 17.4 785      189      257
-#>  2016       386 24.8 785      341      438
-#>  2017       232 16.8 785      201      267
-#>  2018       300 20.2 785      263      343
+#>  2015       225 17.6 785      193      262
+#>  2016       384 24.4 785      339      435
+#>  2017       238 17.1 785      206      274
+#>  2018       300 20.1 785      263      343
 #> 
 #> Degrees-of-freedom method: df.error 
 #> Confidence level used: 0.95 
@@ -1684,7 +1695,7 @@ for our purposes, the results are similar.
 Note that the degrees of freedom are calculated differently, but the
 standard errors and confidence intervals are not very different.
 
-# Decomposing model results
+# Decomposing Model Results
 
 We want to decompose the results into: 0. The Raw data 1. A YEAR BY YEAR
 component 2. A DAY OF YEAR component 2. A WEATHER component, including
@@ -1696,7 +1707,7 @@ requires a tidy dataset
 The way to do this is to fit sequentially simpler models, on the
 residuals of prior models.
 
-We have just completed the Year analysis
+We have just completed the Year analysis, so we rely on that.
 
 ## Raw Data
 
@@ -1714,10 +1725,10 @@ plotdat <- the_data %>%
 ``` r
 (q <- summary(tt2))
 #>  Yearf response   SE  df lower.CL upper.CL
-#>  2015       216 18.7 773      183      256
-#>  2016       385 26.8 773      335      441
-#>  2017       238 18.3 773      205      277
-#>  2018       308 22.7 773      267      356
+#>  2015       222 19.0 774      188      263
+#>  2016       382 26.2 774      333      437
+#>  2017       244 18.6 774      210      284
+#>  2018       308 22.5 774      267      356
 #> 
 #> Confidence level used: 0.95 
 #> Intervals are back-transformed from the log scale
@@ -1797,6 +1808,8 @@ plotdat <- plotdat %>%
          cWeatherAdjust = scale(DOYAdjust, center=TRUE, scale=FALSE),
          Residual = r)
 ```
+
+## Graphic Decomposition of the Time Series
 
 ``` r
 

@@ -79,13 +79,11 @@ theme_set(theme_cbep())
 
 ```
 
-# Import Data
-
-
 # Functions for Weighted SUms
 Here we create a couple of functions to calculate weighted sums of recent
 precipitation.  We only use `expweights()`, below, but used both in early model
-explorations.
+explorations. Further details are provided in the data import code in the
+`Derived_Data` folder.
 
 *  `linweights()` Calculates a weighted sum from a time series.  The weighted
    sum is based on a window of ten observations. The weighted sum weights the 
@@ -969,7 +967,7 @@ purposes, the results are similar.
 Note that the degrees of freedom are calculated differently, but the standard 
 errors and confidence intervals are not very different.
 
-# Decomposing model results
+# Decomposing Model Results
 We want to decompose the results into:
 0. The Raw data
 1. A YEAR BY YEAR component
@@ -983,8 +981,7 @@ requires a tidy dataset
 The way to do this is to fit sequentially simpler models, on the
 residuals of prior models.
 
-We have just completed the Year analysis
-
+We have just completed the Year analysis, so we rely on that.
 
 ## Raw Data
 We center the data before plotting....
@@ -1077,6 +1074,7 @@ plotdat <- plotdat %>%
          Residual = r)
 ```
 
+## Graphic Decomposition of the Time Series
 ```{r, fig.height = 9, fig.width = 5}
 
 pivot_longer(plotdat, c(cObserved, cYrAdjust, cDOYAdjust, 

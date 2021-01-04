@@ -60,14 +60,14 @@ to probe long-term trends.
 library(tidyverse)
 ```
 
-    ## -- Attaching packages --------------------------------------------------------------------------------------------------------------- tidyverse 1.3.0 --
+    ## -- Attaching packages --------------------------------------- tidyverse 1.3.0 --
 
     ## v ggplot2 3.3.2     v purrr   0.3.4
-    ## v tibble  3.0.1     v dplyr   1.0.0
-    ## v tidyr   1.1.0     v stringr 1.4.0
-    ## v readr   1.3.1     v forcats 0.5.0
+    ## v tibble  3.0.4     v dplyr   1.0.2
+    ## v tidyr   1.1.2     v stringr 1.4.0
+    ## v readr   1.4.0     v forcats 0.5.0
 
-    ## -- Conflicts ------------------------------------------------------------------------------------------------------------------ tidyverse_conflicts() --
+    ## -- Conflicts ------------------------------------------ tidyverse_conflicts() --
     ## x dplyr::filter() masks stats::filter()
     ## x dplyr::lag()    masks stats::lag()
 
@@ -219,7 +219,8 @@ Site_IC_Data <- Site_IC_Data %>%
 # Finally, convert percent covers to numeric values
 # By default, the percents are read in incorrectly.
 Site_IC_Data <- Site_IC_Data %>%
-  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%  
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
 knitr::kable(Site_IC_Data, col.names = c('Site',                         'Subwatershed',
                                          'Area (acres)',                 'Impervious Area (acres)',
                                          'Cummulative Area (Acres)',     'Cummulative Impervious Area (Acres)',
@@ -251,7 +252,6 @@ daily_medians <- read_csv(fpath, progress=FALSE,
                             pH_Median = col_number(),
                             pH_SD = col_number(),
                             pH_Iqr = col_number() )) %>%
-  select(-X1) %>%
   select(-ends_with('Min'), -ends_with('Max'), -ends_with('Mean'),
          -ends_with('Iqr'), -ends_with('SD'), -ends_with('_n')) %>%
   mutate(Site = factor(Site)) %>%
@@ -259,7 +259,15 @@ daily_medians <- read_csv(fpath, progress=FALSE,
   filter(Year<2019)    
 ```
 
-    ## Warning: Missing column names filled in: 'X1' [1]
+    ## Warning: 11485 parsing failures.
+    ## row     col expected actual             file
+    ##   1 pH_Mean a number    NaN 'Daily_Data.csv'
+    ##   2 pH_Mean a number    NaN 'Daily_Data.csv'
+    ##   3 pH_Mean a number    NaN 'Daily_Data.csv'
+    ##   4 pH_Mean a number    NaN 'Daily_Data.csv'
+    ##   5 pH_Mean a number    NaN 'Daily_Data.csv'
+    ## ... ....... ........ ...... ................
+    ## See problems(...) for more details.
 
 ``` r
 ggplot(daily_medians, aes(sdate, Chl_Median, color=Site)) + 
@@ -270,15 +278,16 @@ ggplot(daily_medians, aes(sdate, Chl_Median, color=Site)) +
 
     ## Warning: Removed 2329 rows containing missing values (geom_point).
 
-![](Make_Complete_Data_files/figure-gfm/test_plot-1.png)<!-- --> Is
-there really only one year’s worth of data from S06B? And it looks like
-there is exactly one point in 2017 – which is almost certainly a coding
-error.
+![](Make_Complete_Data_files/figure-gfm/test_plot-1.png)<!-- -->
+
+Is there really only one year’s worth of data from S06B? And it looks
+like there is exactly one point in 2017 – which is almost certainly a
+coding error.
 
 ## Weather Data
 
-We downloaded weather data. Here we simplify that data somewhat. We
-simplify it more in the next step.
+Here we access and simplify that data somewhat. We simplify it more in
+the next step.
 
 ``` r
 sibfldnm    <- 'Original_Data'
@@ -330,6 +339,12 @@ summary(weather_data)
 
 ### Add Logged and Weighted Precipitation Values
 
+Recall that the NOAA data provides precipitation in tenths of a
+millimeter, and temperature data in tenths of a degree C. As we use
+these data as predictors, this is of no real significance to our models,
+but it can be confusing when interpreting model results. We correct that
+here for precipitation and maximum temperature data.
+
 ``` r
 weather_data_Complete <- weather_data %>%
   arrange(sdate) %>%
@@ -339,6 +354,9 @@ weather_data_Complete <- weather_data %>%
   mutate(DOY = as.numeric(format(sdate, '%j'))) %>%
 
   select(sdate, Year, Month, DOY, Precip, MaxT) %>%
+  mutate(Precip = Precip / 10,
+         MaxT = MaxT / 10) %>%
+  
   mutate(lPrecip = log1p(Precip)) %>%
   mutate(wPrecip = rollapply(Precip, 10,
                              expweights,
@@ -377,7 +395,7 @@ what we needed.
 ### Export Weather data with weighted sums
 
 ``` r
-write.csv(weather_data_Complete, 'Weather Data.csv')
+write.csv(weather_data_Complete, 'Weather_Data.csv')
 ```
 
 ## Combine Weather and observational data
@@ -396,8 +414,9 @@ The sites we are interested in include:
 Our goal is a “complete” regular time series for each site, with missing
 values where appropriate. We need to be able to do two things with this
 data: (1) Pull complete time series for each site or a subset of
-variables by subsetting or pivot\_wider (2) Analyze the full dataset in
-GAMs or via GLS, with an AR1 error structure.
+variables by subsetting or pivot\_wider  
+(2) Analyze the full dataset in GAMs or via GLS, with an AR1 error
+structure.
 
 With a little code, we can traverse each site and assemble a
 megadataset. We need to use match to make sure we line things up
@@ -459,7 +478,7 @@ in the data.
 like an AR2 or AR3.)
 
 The basic idea is to create a variable that is lagged appropriately, so
-I know whether the NEXT row contains data, Then I can retain rows that
+we know whether the NEXT row contains data, Then I can retain rows that
 EITHER contain data, or for which the NEXT row contains data.
 
 The dplyr::lead() function can “look forward” one row to see if we have
@@ -470,9 +489,15 @@ valid data in the next few samples.
 ``` r
 final_data <- all_data %>%
   mutate(hasdata = ! (is.na(Chl_Median) & is.na(DO_Median) & is.na(D_Median))) %>% 
-  mutate(nexthasdata = ! (is.na(lead(Chl_Median)) & is.na(lead(DO_Median)) & is.na(lead(D_Median)))) %>%
-  mutate(secondhasdata = ! (is.na(lead(Chl_Median,2)) & is.na(lead(DO_Median,2)) & is.na(lead(D_Median,2)))) %>%
-  mutate(thirdhasdata = ! (is.na(lead(Chl_Median,3)) & is.na(lead(DO_Median,3)) & is.na(lead(D_Median,3)))) %>%
+  mutate(nexthasdata = ! (is.na(lead(Chl_Median)) & 
+                            is.na(lead(DO_Median)) & 
+                            is.na(lead(D_Median)))) %>%
+  mutate(secondhasdata = ! (is.na(lead(Chl_Median,2)) & 
+                              is.na(lead(DO_Median,2)) & 
+                              is.na(lead(D_Median,2)))) %>%
+  mutate(thirdhasdata = ! (is.na(lead(Chl_Median,3)) & 
+                             is.na(lead(DO_Median,3)) & 
+                             is.na(lead(D_Median,3)))) %>%
   mutate(test0 = hasdata | nexthasdata | secondhasdata | thirdhasdata) %>%
   filter(test0) %>%
   select(-hasdata, -nexthasdata, -secondhasdata, -thirdhasdata, -test0)

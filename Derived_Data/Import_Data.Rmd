@@ -20,9 +20,13 @@ library(tidyverse)
 ```
 
 # Data Review
-We begin by reviewing content of one of the Excel spreadsheets provided to us., for site S01.
+We begin by reviewing content of one of the Excel spreadsheets provided to us, 
+for site S01.
 
-We have some trouble reading in these files, because of their size. If we mis-specify data types, it slows down loading. But if we get that right, we can read these in fairly quickly.  It pays to specify data columns to speed the data load process.
+We have some trouble reading in these files, because of their size. If we
+mis-specify data types, it slows down loading. But if we get that right, we can
+read these in fairly quickly.  It pays to specify data columns to speed the data
+load process.
 ```{r load_test_data}
 sibfldnm    <- 'Original_Data'
 subfldnm    <- 'Data_Package_to_LCWMD'
@@ -48,11 +52,23 @@ summary(test.data)
 # rm(test.data)
 ```
 
-The structure of the source Excel files is a bit confusing.  The consolidated data in the first tab of each data sheet are derived from lookup formulas that extract data from the source data, present in the "Sonde" and "Pressure" tabs.  The consolidated data sheet FIRST tries to pull matching data from the Sonde data, and if that is not available, it then pulls data from the pressure transducer. 
+The structure of the source Excel files is a bit confusing.  The consolidated
+data in the first tab of each data sheet are derived from lookup formulas that
+extract data from the source data, present in the "Sonde" and "Pressure" tabs.
+The consolidated data sheet FIRST tries to pull matching data from the Sonde
+data, and if that is not available, it then pulls data from the pressure
+transducer.
 
-That order of precedence is arguably incorrect for water depth, which is based on pressure, and thus should be more accurate if derived from the pressure transducers, not the sondes. However, it turns out that no pressure or depth data was included in the sonde data (even though some sondes DO have pressure sensors). We are correctly pulling depth data from the pressure transducers only, despite the ambiguous formulas.
+That order of precedence is arguably incorrect for water depth, which is based
+on pressure, and thus should be more accurate if derived from the pressure
+transducers, not the sondes. However, it turns out that no pressure or depth
+data was included in the sonde data (even though some sondes DO have pressure
+sensors). We are correctly pulling depth data from the pressure transducers
+only, despite the ambiguous formulas.
 
-For some parameters, notably calculated chlorides, dissolved oxygen, and percent saturation, each observation is split into two columns, the first being the observation, and the second being labeled as "ND" in the original data.
+For some parameters, notably calculated chlorides, dissolved oxygen, and percent
+saturation, each observation is split into two columns, the first being the
+observation, and the second being labeled as "ND" in the original data.
 
 Lets figure out what type of values those include.
 ```{r content_of_ND)}
@@ -68,7 +84,9 @@ test.data <- read_excel(fpath,
     mutate_all(~factor(.))
 test.data %>% summarise()
 ```
-So, there is No data in those columns in the first spreadsheet.  We need to check all available data, so I'll go through each spreadsheet in turn and see whether these columns contain any non-missing values.
+So, there is No data in those columns in the first spreadsheet.  We need to
+check all available data, so I'll go through each spreadsheet in turn and see
+whether these columns contain any non-missing values.
 ```{r all_ND, cache = TRUE}
 results <- matrix(c(length(levels(test.data[,1])),
              length(levels(test.data[,2])),
@@ -105,9 +123,12 @@ rm(test.data, results, current, site)
 
 # Load Final Data
 ## First Site
-Using column designations speeds up file import -- unless there are errors.  Preparing and printing error messages drastically slows this code.
+Using column designations speeds up file import -- unless there are errors.  
+Preparing and printing error messages drastically slows this code.
 
-We load one data set first, to set up data format, before loading the other files.  This is not strictly necessary, but it's convenient to have a first dataframe to add others to using bind_rows.
+We load one data set first, to set up data format, before loading the other 
+files.  This is not strictly necessary, but it's convenient to have a first 
+dataframe to add others to using bind_rows.
 ```{r load_first}
 fn <- "S01 Merged Pressure and Sonde.xlsx"
 fpath <- file.path(sibling, subfldnm, subsubfldnm, fn)
@@ -150,7 +171,10 @@ for (site in othersites) {
 ```
 
 ## Rename and Reorder
-It is worth noting that the data are NOT sorted by date and time, but apparently by Month, day, and time.  That is, at least some of the time, Data with the same calendar dates and times from different years are stored together.  I address that in this next block of code.
+It is worth noting that the data are NOT sorted by date and time, but apparently
+by Month, day, and time.  That is, at least some of the time, Data with the same
+calendar dates and times from different years are stored together.  I address
+that in this next block of code.
 ```{r rename_and_reorder}
 newnames <- c('DT', 'Chl', 'D', 'DO', 'PctSat', 'pH', 'Press', 'SpCond', 'T','Precip', 'Site')
 names(the_data) <- newnames

@@ -108,7 +108,8 @@ Site_IC_Data <- Site_IC_Data %>%
 # Finally, convert percent covers to numeric values
 # By default, the percents are read in incorrectly.
 Site_IC_Data <- Site_IC_Data %>%
-  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%  
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
 knitr::kable(Site_IC_Data, col.names = c('Site',                         'Subwatershed',
                                          'Area (acres)',                 'Impervious Area (acres)',
                                          'Cummulative Area (Acres)',     'Cummulative Impervious Area (Acres)',
@@ -116,7 +117,10 @@ knitr::kable(Site_IC_Data, col.names = c('Site',                         'Subwat
 ```
 
 ## Main Data
-Read in the data from the Derived Data folder.  Arrange by date within each site. We filter out data from 2019 because we only have data from a portion of that year.  Including that data in subsequent analyses may bias estimation of annual averages and seasonal trends.
+Read in the data from the Derived Data folder.  Arrange by date within each
+site. We filter out data from 2019 because we only have data from a portion of
+that year.  Including that data in subsequent analyses may bias estimation of
+annual averages and seasonal trends.
 ```{r load_main_data}
 fpath <- "Daily_Data.csv"
 
@@ -126,7 +130,6 @@ daily_medians <- read_csv(fpath, progress=FALSE,
                             pH_Median = col_number(),
                             pH_SD = col_number(),
                             pH_Iqr = col_number() )) %>%
-  select(-X1) %>%
   select(-ends_with('Min'), -ends_with('Max'), -ends_with('Mean'),
          -ends_with('Iqr'), -ends_with('SD'), -ends_with('_n')) %>%
   mutate(Site = factor(Site)) %>%
@@ -140,11 +143,13 @@ ggplot(daily_medians, aes(sdate, Chl_Median, color=Site)) +
   theme_minimal() +
   facet_wrap(~Site)
 ```
-Is there really only one year's worth of data from S06B?  And it looks like there is exactly one point in 2017 -- which is almost certainly a coding error.
 
+Is there really only one year's worth of data from S06B?  And it looks like
+there is exactly one point in 2017 -- which is almost certainly a coding error.
 
 ## Weather Data
-We downloaded weather data.  Here we simplify that data somewhat.  We simplify it more in the next step.
+Here we access and simplify that data somewhat.  We simplify 
+it more in the next step.
 ```{r load_weather_data}
 sibfldnm    <- 'Original_Data'
 parent      <- dirname(getwd())
@@ -177,6 +182,11 @@ summary(weather_data)
 ```
 
 ### Add Logged and Weighted Precipitation Values
+Recall that the NOAA data provides precipitation in tenths of a millimeter, and
+temperature data in tenths of a degree C. As we use these data as predictors,
+this is of no real significance to our models, but it can be confusing when
+interpreting model results.  We correct that here for precipitation and maximum
+temperature data.
 ```{r add_sums_and_lags}
 weather_data_Complete <- weather_data %>%
   arrange(sdate) %>%
@@ -186,6 +196,9 @@ weather_data_Complete <- weather_data %>%
   mutate(DOY = as.numeric(format(sdate, '%j'))) %>%
 
   select(sdate, Year, Month, DOY, Precip, MaxT) %>%
+  mutate(Precip = Precip / 10,
+         MaxT = MaxT / 10) %>%
+  
   mutate(lPrecip = log1p(Precip)) %>%
   mutate(wPrecip = rollapply(Precip, 10,
                              expweights,
@@ -213,7 +226,8 @@ plot(Precip~sdate, data = tmp)
 points(wPrecip~sdate, data = tmp, col='Red')
 rm(tmp)
 ```
-Note that after each major rain event, the weighted sum drops, which is what we needed.
+Note that after each major rain event, the weighted sum drops, which is what we 
+needed.
 
 ### Export Weather data with weighted sums
 ```{r save_weather_data}
@@ -221,7 +235,9 @@ write.csv(weather_data_Complete, 'Weather_Data.csv')
 ```
 
 ## Combine Weather and observational data
-The challenge we have combining data is that we need to add observations site by site and correctly identify missing data. Since missing data can occur independently at each site, we need to ensure we generate 
+The challenge we have combining data is that we need to add observations site by
+site and correctly identify missing data. Since missing data can occur
+independently at each site, we need to ensure we generate
 
 Nevertheless, we may want to assemble a combined data set for modeling purposes.
 
@@ -230,13 +246,21 @@ The sites we are interested in include:
 cat(as.character((Site_IC_Data$Site)))
 ```
 
-Our goal is a "complete" regular time series for each site, with missing values where appropriate.  We need to be able to do two things with this data:
-(1) Pull complete time series for each site or a subset of variables by subsetting or pivot_wider
-(2) Analyze the full dataset in GAMs or via GLS, with an AR1 error structure.
+Our goal is a "complete" regular time series for each site, with missing values 
+where appropriate.  We need to be able to do two things with this data:
+(1) Pull complete time series for each site or a subset of variables by 
+    subsetting or pivot_wider  
+(2) Analyze the full dataset in GAMs or via GLS, with an AR1 error structure. 
 
-With a little code, we can traverse each site and assemble a megadataset.  We need to use match to make sure we line things up correctly within each site, honoring all missing values, etc.  We only need the first nine data columns of daily_medians because the weather data already contains date and weather data.
+With a little code, we can traverse each site and assemble a megadataset.  We
+need to use match to make sure we line things up correctly within each site,
+honoring all missing values, etc.  We only need the first nine data columns of
+daily_medians because the weather data already contains date and weather data.
 
-By joining the "daily_data" site by site onto data derived from the weather data ( which includes all dates in the target period), we implicitly create a "complete" data record for each site.  (It would probably be possible to run each step more compactly using left_join() instead of match()).
+By joining the "daily_data" site by site onto data derived from the weather data
+( which includes all dates in the target period), we implicitly create a
+"complete" data record for each site.  (It would probably be possible to run
+each step more compactly using left_join() instead of match()).
 
 ```{r assemble_all_sites}
 l <- list()
@@ -265,22 +289,45 @@ rm(l, d_data, d_part)
 
 
 ### Removing missing values
-That produces the "full" regular time series.  But it wastes a LOT of memory because it contains so many NAs. Since each site was assembled separately, based on the full 10 year weather record, I have missing values any time a particular SITE lacks data.  Since several sites have only a few years of data, for those sites, we've got a lot of pointless data rows.
+That produces the "full" regular time series.  But it wastes a LOT of memory
+because it contains so many NAs. Since each site was assembled separately, based
+on the full 10 year weather record, I have missing values any time a particular
+SITE lacks data.  Since several sites have only a few years of data, for those
+sites, we've got a lot of pointless data rows.
 
-The obvious thing to do would be to just filter out rows with NAs in the measured variables, but that won't work.  We  want to retain one NA BEFORE the first row of data in each contiguous block of data, so we can correctly use an AR1 error structure in our modeling.  If we are using an AR1 model, the  "first" observation in a block of data will implicitly look to the prior row (not prior time index) to grab the "preceding" value.  So we need to make sure that value is NA when it needs to be, and not the LAST observation from the prior block of real data in sequence in the data.
+The obvious thing to do would be to just filter out rows with NAs in the
+measured variables, but that won't work.  We  want to retain one NA BEFORE the
+first row of data in each contiguous block of data, so we can correctly use an
+AR1 error structure in our modeling.  If we are using an AR1 model, the  "first"
+observation in a block of data will implicitly look to the prior row (not prior
+time index) to grab the "preceding" value.  So we need to make sure that value
+is NA when it needs to be, and not the LAST observation from the prior block of
+real data in sequence in the data.
 
-(Note:  This assumes we don't deed a more complicated error structure, like an AR2 or AR3.) 
+(Note:  This assumes we don't deed a more complicated error structure, like an
+AR2 or AR3.) 
 
 
-The basic idea is to create a variable that is lagged appropriately, so I know whether the NEXT row contains data, Then I can retain rows that EITHER contain data, or for which the NEXT row contains data.
+The basic idea is to create a variable that is lagged appropriately, so we know
+whether the NEXT row contains data, Then I can retain rows that EITHER contain
+data, or for which the NEXT row contains data.
 
-The dplyr::lead() function can "look forward" one row to see if we have a missing data or not.  So we can combine several to figure out how soon we will have data.  What we want here is a test to see if we have ANY valid data in the next few samples.
+The dplyr::lead() function can "look forward" one row to see if we have a
+missing data or not.  So we can combine several to figure out how soon we will
+have data.  What we want here is a test to see if we have ANY valid data in the
+next few samples.
 ```{r remove_useless_NAs}
 final_data <- all_data %>%
   mutate(hasdata = ! (is.na(Chl_Median) & is.na(DO_Median) & is.na(D_Median))) %>% 
-  mutate(nexthasdata = ! (is.na(lead(Chl_Median)) & is.na(lead(DO_Median)) & is.na(lead(D_Median)))) %>%
-  mutate(secondhasdata = ! (is.na(lead(Chl_Median,2)) & is.na(lead(DO_Median,2)) & is.na(lead(D_Median,2)))) %>%
-  mutate(thirdhasdata = ! (is.na(lead(Chl_Median,3)) & is.na(lead(DO_Median,3)) & is.na(lead(D_Median,3)))) %>%
+  mutate(nexthasdata = ! (is.na(lead(Chl_Median)) & 
+                            is.na(lead(DO_Median)) & 
+                            is.na(lead(D_Median)))) %>%
+  mutate(secondhasdata = ! (is.na(lead(Chl_Median,2)) & 
+                              is.na(lead(DO_Median,2)) & 
+                              is.na(lead(D_Median,2)))) %>%
+  mutate(thirdhasdata = ! (is.na(lead(Chl_Median,3)) & 
+                             is.na(lead(DO_Median,3)) & 
+                             is.na(lead(D_Median,3)))) %>%
   mutate(test0 = hasdata | nexthasdata | secondhasdata | thirdhasdata) %>%
   filter(test0) %>%
   select(-hasdata, -nexthasdata, -secondhasdata, -thirdhasdata, -test0)
