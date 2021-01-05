@@ -5,13 +5,19 @@ date: "11/12/2020"
 output:
   github_document:
     toc: true
-    fig_width: 7
-    fig_height: 5
+    fig_width: 5
+    fig_height: 3
 ---
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
     style="position:absolute;top:10px;right:50px;" />
-    
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
 # Introduction
 The Long Creek Watershed, a bit over two square miles in area, is dominated by
 commercial land use. The Maine Mall is one of the largest land owners in the
@@ -133,13 +139,24 @@ These data were derived from Table 2 from a GZA report to the Long Creek
 Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
 Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
 November 13, 2019 File No. 09.0025977.02.
+
 ```{r}
 # Read in data and drop the East Branch, where we have no data
-Site_IC_Data <- read_csv(file.path(sibling, fn))  %>%
-  filter(Site != "--") %>%
-  
-  # Now, create a factor that preserves the order of rows
-  mutate(Site = factor(Site, levels = Site))
+fn <- "Site_IC_Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
 ```
 
 ## Main Data
@@ -159,6 +176,19 @@ exceeds = read_csv(file.path(sibling, fn), progress=FALSE) %>%
                                            'Summer', 'Fall'))) %>%
   mutate(month_f = factor(Month, levels = 1:12, labels = month.abb))
 ```
+
+
+
+  
+```{r, fig.height = 10, fig.width = 8}
+mosaic(~MaxT + ClassCDO, data = exceeds, color=TRUE)
+```
+
+So, that shows the two types of problems are highly correlated....  It may 
+be better to treat temperatures as causal variables for DO in some kinds of 
+models.
+
+
 
 # Initial Cross Tabs
 ## Utility Function

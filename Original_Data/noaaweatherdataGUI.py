@@ -239,7 +239,7 @@ class NOAAWeatherApp(tk.Frame):
         # App constructor function builds the user interface
 
         tk.Frame.__init__(self, master)   # Constructor for the parent class.
-        self.master.title('Online Access for NOAA Historic Weather Data ONLY WORKS FOR HOURLY')
+        self.master.title('Online Access for NOAA Historic Weather Data')
         self.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
         self.master.resizable(False, False)
         

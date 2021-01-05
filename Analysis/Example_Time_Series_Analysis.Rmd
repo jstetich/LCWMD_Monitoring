@@ -79,7 +79,7 @@ theme_set(theme_cbep())
 
 ```
 
-# Functions for Weighted SUms
+# Functions for Weighted Sums
 Here we create a couple of functions to calculate weighted sums of recent
 precipitation.  We only use `expweights()`, below, but used both in early model
 explorations. Further details are provided in the data import code in the

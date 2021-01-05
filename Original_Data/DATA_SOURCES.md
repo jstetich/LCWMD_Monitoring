@@ -27,7 +27,7 @@ https://www.ncdc.noaa.gov/cdo-web/datasets
 Portland Jetport weather data was  downloaded by Curtis C. Bohlen using a custom
 python script, titled "noaaweatherdataGUI.py" on April 23, 2020.
 
-## Units
+### Units
 Data is in SI units, except that NOAA provides some data in tenths of the
 nominal units.  This is not well documented through the API, but obvious in 
 context. Temperatures are reported in tenths of degrees C, and precipitation in

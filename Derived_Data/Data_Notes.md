@@ -1,18 +1,17 @@
-Data Notes
+# Data Notes
 ==============
 
 <img
   src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
   style="position:absolute;top:10px;right:50px;" />
   
-# Data Files in This Folder
+## Data Files in This Folder
 1.  **Sonde_Data.csv**  --  (Omitted from Github Repository because of its size)
     Contains raw data assembled from original Excel files.  See code in 
     *Import_Data.Rmd*  for details.  
 2.  **Daily_Data.csv**   -- Daily summaries (min, max, median, mean, sd, IQr, n)
-    derived from *Sonde_Data.csv*.  This is the version of the sonde data we
-    principally worked with. See related code in *Make_Daily_Summaries.Rmd* for
-    details.  
+    derived from *Sonde_Data.csv*. See related code in 
+    *Make_Daily_Summaries.Rmd* for details.  
 3.  **Exceeds_Data.csv**  -- Data derived from *Daily_Data.csv* containing flags
     that indicate whether conditions that day exceeded acute or chronic exposure
     thresholds.   Thresholds for Chlorides, DO, and Percent Saturation are
@@ -22,8 +21,8 @@ Data Notes
     details.  
 4.  **Full_Data.csv** -- Data derived from *Daily_data.csv* containing lags and
     weighted sums for time series analysis.  The data contains missing values
-    where there are gaps in the data, so that regression models rely only on
-    data where lag data are available.  See the code in
+    where there are gaps in the data, so that autocorrelation-based regression
+    models rely only on data where lag data are available.  See the code in
     *Make_Complete_Data.Rmd* for details.  
 5.  **Site_IC_Data.csv**  and  **Site_IC_Data.xlsx** --  Simplified data of
     direct and cumulative subwatershed area and imperviousness for each Long
@@ -38,7 +37,7 @@ Data Notes
     includes grab sample data only (no data logger or other "continuous" data).
     See the code in  *Import_Grab_Sample_Data.Rmd* for details.  
 
-# Data omitted from this folder
+## Data omitted from this folder
 The LCWMD sonde data, with data collected generally every fifteen minutes to
 half an hour across multiple sites, amounts to a substantial amount of data. In
 order to reduce the size of this Archive, we have omitted some intermediate
