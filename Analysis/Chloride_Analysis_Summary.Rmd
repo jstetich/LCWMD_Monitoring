@@ -1,0 +1,599 @@
+---
+title: "Summary of Analysis of LCWMD 'Chloride' Data"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "01/06/2021"
+output:
+  github_document:
+    toc: true
+    fig_width: 5
+    fig_height: 4
+---
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
+# Introduction
+Chlorides are frequently elevated in Maine urban streams because of use of salt
+for deicing of roads, parking areas, sidewalks, and paths in winter.  While
+water quality standards are often written in terms of chlorides, it may be
+better to think about chlorides as a measure of the salinity. Physiologically,
+it is probably salinity or osmolarity that principally affects organisms in the
+stream, not chlorides *per se*. The data we examine here is based on measurement
+of conductivity, which is converted to an estimate of in-stream chlorides based
+on a robust regression relationship developed over several years.
+
+This R Notebook reviews the model we end up using to analyze chloride levels in
+Long Creek. We examined numerous models before settling on this one.  Details
+of some of those models is available in the "Chloride_Analysis.Rmd" notebook.
+
+Several more complex models are "better" using conventional measures of 
+statistical significance or information criteria.  We selected a slightly 
+simpler model, largely as it makes explaining the model more direct.
+
+Our interest focuses on answering three questions:  
+1.  What is the effect of time of year (Month, or Day of Year) on chlorides?  
+2.  Do chloride levels differ from site to site?  
+3.  Is there a long-term trend in chlorides?
+3.  Are there  differences in the magnitude of the trend from site to site?
+
+We use a Generalized Additive Model, with autocorrelated errors to explore 
+these questions.  The model has the following form:
+
+$$ 
+\begin{align}
+log(Chlorides) &= f(Covariates) + \\
+&\qquad \beta_{1,i} Site_i + 
+\beta_{2,j} Month_j + \beta_3 Year + \beta_{4,i} Site_i * Year + \epsilon
+\end{align}
+$$
+
+Where:
+*  covariates include three terms:  
+   --  Daily precipitation  
+   --  Weighted precipitation from the prior nine days  
+   --  Stream flow in the middle of the watershed  
+* The core predictors enter the model as standard linear terms  
+* The error i an AR(1) correlated error.
+
+We abuse the autocorrelation models slightly, since we use sequential
+autocorrelations (not time-based) and we don't fit separate autocorrelations for
+each site and season. That should have little impact on results, as transitions
+are relatively rare in a dense data set, and missing values at the beginning of
+each season at each site prevent estimation near season and site transitions in
+the sequential data anyway.
+
+On the whole, this models is OK, but not great. It has heavy tailed, skewed 
+residuals. We should not trust the asymptotic p values. But since sample sizes 
+are large and results tend to have high statistical significance, p values are
+not much use anyway.
+
+# Import Libraries  
+```{r}
+library(tidyverse)
+library(readr)
+
+library(emmeans) # Provides tools for calculating marginal means
+library(nlme)
+
+#library(zoo)     # here, for the `rollapply()` function
+
+library(mgcv)    # generalized additive models. Function gamm() allows
+                 # autocorrelation.
+
+library(CBEPgraphics)
+load_cbep_fonts()
+theme_set(theme_cbep())
+```
+
+# Data Preparation
+## Initial Folder References
+```{r}
+sibfldnm    <- 'Original_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
+dir.create(file.path(getwd(), 'models'), showWarnings = FALSE)
+```
+
+## Load Weather Data
+```{r load_weather_data}
+fn <- "Portland_Jetport_2009-2019.csv"
+fpath <- file.path(sibling, fn)
+
+weather_data <- read_csv(fpath, 
+ col_types = cols(.default = col_skip(),
+        date = col_date(),
+        PRCP = col_number(), PRCPattr = col_character() #,
+        #SNOW = col_number(), SNOWattr = col_character(), 
+        #TMIN = col_number(), TMINattr = col_character(), 
+        #TAVG = col_number(), TAVGattr = col_character(), 
+        #TMAX = col_number(), TMAXattr = col_character(), 
+        )) %>%
+  rename(sdate = date) %>%
+  mutate(pPRCP = dplyr::lag(PRCP))
+```
+
+## Update Folder References
+```{r}
+sibfldnm    <- 'Derived_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+```
+
+## Load Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek
+Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
+Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
+November 13, 2019 File No. 09.0025977.02.
+
+Cumulative Area and IC calculations are our own, based on the GZA data and the
+geometry of the stream channel.
+
+```{r}
+# Read in data and drop the East Branch, where we have no data
+fn <- "Site_IC_Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
+```
+
+## Load Main Data
+Read in the data from the Derived Data folder.
+
+Note that I filter out data from 2019 because that is only a partial year, which might affect estimation of things like seasonal trends.  We could add it back in, but with care....
+
+*Full_Data.csv* does not include a field for precipitation from the
+previous day.  In earlier work, we learned that a weighted sum of recent
+precipitation provided better explanatory power.  But we also want to check
+a simpler model, so we construct a "PPrecip" data field.  This is based
+on a modification of code in the "Make_Daily_Summaries.Rmd" notebook.
+
+```{r}
+fn <- "Full_Data.csv"
+fpath <- file.path(sibling, fn)
+
+full_data <- read_csv(fpath, 
+    col_types = cols(DOY = col_integer(), 
+        D_Median = col_double(), Precip = col_number(), 
+        X1 = col_skip(), Year = col_integer(), 
+        FlowIndex = col_double())) %>%
+
+  mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
+  mutate(Month = factor(Month, levels = month.abb)) %>%
+  mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
+  mutate(Yearf = factor(Year)) %>%
+
+# We combine data using "match" because we have data for multiple sites and 
+# therefore dates are not unique.  `match()` correctly assigns weather
+# data by date.
+mutate(PPrecip = weather_data$pPRCP[match(sdate, weather_data$sdate)])
+
+```
+
+### Cleanup
+```{r}
+rm(Site_IC_Data, weather_data)
+rm(fn, fpath, parent, sibling, sibfldnm)
+```
+
+## Data Correction
+
+### Anomolous Depth Values
+Several depth observations in the record appear highly unlikely. In particular,
+several observations show daily median water depths over 15 meters. And
+those observations were recorded in May or June, at site S05, with no associated 
+record of significant precipitation, and no elevated depths at other sites on 
+the stream.
+
+We can trace these observations back to the raw QA/QC'd pressure and sonde data 
+submitted to LCWMD by GZA, so they are not an artifact of our data preparation.
+
+A few more observations show daily median depths over 4 meters, which also
+looks unlikely in a stream of this size.  All these events also occurred in 
+May or June of 2015 at site S05. Some sort of malfunction of the pressure 
+transducer appears likely.
+
+We remove these extreme values.  The other daily medians in May and June of 2015
+appear reasonable, and we leave them in place, although given possible 
+instability of the pressure sensors, it might make sense to remove them all.
+```{r}
+full_data <- full_data %>%
+  mutate(D_Median = if_else(D_Median > 4, NA_real_, D_Median),
+         lD_Median = if_else(D_Median > 4, NA_real_, lD_Median))
+```
+
+### Single S06B Chloride Observation from 2017
+The data includes just a single chloride observation from site S06B from
+any year other than 2013.  While we do not know if the data point is legitimate
+or not, it has very high leverage in several models, and we suspect a 
+transcription error of some sort.
+```{r fig.width = 3, fig.height = 2}
+full_data %>%
+  filter(Site == 'S06B') %>%
+  select(sdate, Chl_Median) %>%
+  ggplot(aes(x = sdate, y = Chl_Median)) + geom_point()
+```
+
+We remove the Chloride value from the data.
+```{r}
+full_data <- full_data %>%
+  mutate(Chl_Median = if_else(Site == 'S06B' & Year > 2014,
+                              NA_real_, Chl_Median))
+```
+
+## Add Stream Flow Index
+We worked through many models on a site by site basis in which we included data
+on water depth, but since the depth coordinate is site-specific, a 10 cm depth
+at one site may be exceptional, while at another it is commonplace. We generally
+want not a local measure of stream depth, but a watershed-wide metric of high,
+medium, or low stream flow.
+
+Middle and Lower Maine Stem sites would be suitable for a general flow indicator
+across the watershed. The monitoring sites in that stretch of Long Creek include
+include S05 and S17, however only site S05 has been in continuous operation
+throughout the period of record, so we use depth data from S05 to construct
+our general stream flow indicator.
+
+Stream flow at S05 is correlated with flow at other sites, although not all that
+closely correlated to flow in the downstream tributaries.
+
+```{r}
+full_data %>%
+  select(sdate, Site, lD_Median) %>%
+  pivot_wider(names_from = Site, values_from = lD_Median) %>%
+  select( -sdate) %>%
+  cor(use = 'pairwise', method = 'pearson')
+
+```
+
+We use the log of the daily median flow at S05 as a general watershed-wide
+stream flow indicator, which we call `FlowIndex`.  We use the log of the raw
+median, to lessen the effect of the highly skewed distribution of stream depths
+on the metric.
+
+```{r}
+depth_data <- full_data %>%
+  filter (Site == 'S05') %>%
+  select(sdate, lD_Median)
+
+full_data <- full_data %>%
+  mutate(FlowIndex = depth_data$lD_Median[match(sdate, depth_data$sdate)])
+  rm(depth_data)
+```
+
+Note that because the flow record at S05 has some gaps, any model using this
+predictor is likely to have a smaller sample size.
+
+## Create Working Data
+Including Site = S06B in the GLS models causes an error, because models that
+includes a Site:Year interaction are rank deficient.  We only have one year's
+worth of data from that site.  (`lm()` handles that case
+gracefully, `gls()` does not.)
+
+```{r}
+xtabs(~ Site + Year, data = full_data)
+```
+
+We proceed with analyses that omits Site S06B.
+```{r}
+reduced_data <- full_data %>%
+  select (Site, Year, Month, DOY,
+          Precip, lPrecip, PPrecip, wlPrecip,
+          D_Median, lD_Median,
+          Chl_Median, 
+          IC, FlowIndex) %>%
+  filter (Site != 'S06B' ) %>%
+  mutate(Site = droplevels(Site)) %>%
+  mutate(Year_f = factor(Year))
+```
+
+## Cleanup
+```{r}
+rm(full_data)
+```
+
+# GAMM Analysis
+Here we use more sophisticated "General Additive Models" that allow non-linear
+(smoother) fits for some parameters. Our emphasis is on using smoothers to 
+better account for non-linearities in relationships between weather or
+flow-related predictors and chlorides.
+
+We use the function `gamm()` because it has a relatively simple interface for
+incorporating autocorrelated errors.
+
+We abuse the autocorrelation model slightly, since we don't fit
+separate autocorrelations for each site and season.  That should have little
+impact on results, as missing values at beginning and end of most time series
+prevent estimation anyway.
+
+## Initial Model
+Our first GAMM simply fits smoothers for each of the major weather-related
+covariates.  Arguably, we should fit separate smoothers by `FlowIndex` for
+each site, but we did not include interaction terms in our earlier base models, 
+so we leave that out here as well.
+
+This model takes several minutes to run (more than 5, less than 15)
+```{r first_gamm, cache = TRUE}
+if (! file.exists("models/the_gamm.rds")) {
+  the_gamm <- gamm(log(Chl_Median) ~ Site + 
+                     s(lPrecip) + 
+                     s(wlPrecip) +
+                     s(FlowIndex) +
+                     Month +
+                     Year +
+                     Site : Year,
+                   correlation = corAR1(0.8),
+                   na.action = na.omit, 
+                   method = 'REML',
+                   data = reduced_data)
+  saveRDS(the_gamm, file="models/the_gamm.rds")
+} else {
+  the_gamm <- readRDS("models/the_gamm.rds")
+}
+```
+
+## ANOVA
+```{r}
+anova(the_gamm$gam)
+```
+
+## Summary
+```{r}
+summary(the_gamm$gam)
+```
+
+## Structure of the GAM
+```{r}
+plot(the_gamm$gam)
+```
+Note that the function for recent weighted precipitation is nearly linear,
+while the effect of present-day precipitation is near zero for low to moderate
+rainfall, but drops quickly for rainfall over about 4 cm or 1.5 inches (rare
+events).  Chlorides drop with increasing water depth, up to a point, but then 
+climb again at the highest (very rare) flow levels.
+
+What these smoothers show is that sticking with linear terms for many of our
+covariates should work fairly well, except at the highest flow conditions.  We
+might also consider adding a "high rainfall"  term, rather than fitting a
+a linear or smoothed predictor term for today's rain. The cost of such model
+simplification would be a drop in ability to accurately predict chloride
+levels under the highest flow, highest rainfall conditions.
+
+## Diagnostic Plots
+The help files for `gam.check()` suggest using care when interpreting results
+for GAMM models, since the function does not correctly incorporate the error
+correlations structure.  However, for our purposes, this is probably sufficient,
+since our focus is not on statistical significance, but on estimation.
+```{r}
+gam.check(the_gamm$gam)
+```
+As with the linear model, we have a skewed, slightly heavy tailed distribution
+of residuals, with a couple of very large outliers. There is perhaps slight
+evidence for lack of complete independence between residuals and predictors.  T
+his model is adequate, but not great.  For careful work, we should probably use
+bootstrapped confidence intervals or something similar, but for our purposes, 
+that is probably overkill.
+
+## Checking Estimated Marginal Means
+Reliably calling `emmeans()` for these large `gamm()` models appears to require 
+creating a call object and associating it with the model (e.g., as
+`the_gamm$gam$call`). (See the `emmeans` models vignette for more info, although
+not all strategies recommended there worked for us).
+
+We first create the call object, then associate it with the model, and finally
+manually construct a reference grid before calling `emmeans()` to extract
+marginal means.  This workflow has the advantage that it requires us to think
+carefully about the structure of the reference grid.
+
+Note also that we explicitly specify that we want the marginal means estimated 
+at Year = 2014.  This is largely to be explicit, and avoid possible confusion 
+from here on out.  The default method creates a reference grid where marginal 
+means are keyed to mean values of all predictors, which would be some value 
+slightly larger than 2014.  However, we specified `cov.reduce = median`, and the
+median Year predictor is precisely 2014.  Although this setting is probably
+unnecessary, we chose to be explicit from here on out.
+
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                          s(lPrecip) + 
+                          s(wlPrecip) +
+                          s(FlowIndex) +
+                          Month +
+                          Year +
+                          Site : Year,
+                        correlation = corAR1(0.8),
+                        na.action = na.omit, 
+                        method = 'REML',
+                        data = reduced_data))
+the_gamm$gam$call <- the_call
+
+my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median) 
+(a <- emmeans(my_ref_grid, ~ Month, type = 'response'))
+```
+
+```{r}
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  annotate('text', 400, 6, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+```
+
+```{r fig.width = 5, fig.height = 4}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
+
+(a <- emmeans(my_ref_grid, ~ Site, type = 'response'))
+```
+
+```{r}
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab("Upstream                  Main Stem                                 Lower Tribs                   ") +
+  annotate('text', 400, 2.5, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+
+```
+
+## Visualizing Trends
+We extract results on the log scale, so we can calculate the linear 
+predictor by hand, then back transform.
+```{r}
+my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014, Month = 'Jul'),
+                        cov.reduce = median)
+
+a <- summary(emmeans(my_ref_grid, 'Site'))
+(b <- summary(emtrends(the_gamm, 'Site', 'Year')))
+```
+The key insight here is that the trends are significant for all sites EXCEPT
+S17, where we have fewer years of data.
+
+```{r}
+plot(b)
+```
+And those trends are NOT statistically different.
+
+```{r}
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 10), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  xlab('') +
+  ylim(0,600) +
+  geom_hline(yintercept =  230, color = 'black') +
+  #geom_hline(yintercept =  860, color = 'red') +
+
+  theme_cbep(base_size = 12)
+```
+
+
+
+# Model without the interactions.
+This model takes several minutes to run (more than 5, less than 15)
+```{r revised_gamm_1, cache = TRUE}
+if (! file.exists("models/revised_gamm.rds")) {
+  revised_gamm <- gamm(log(Chl_Median) ~ Site + 
+                     s(lPrecip) + 
+                     s(wlPrecip) +
+                     s(FlowIndex) +
+                     Month +
+                     Year,
+                   correlation = corAR1(0.8),
+                   na.action = na.omit, 
+                   method = 'REML',
+                   data = reduced_data)
+  saveRDS(revised_gamm, file="models/revised_gamm.rds")
+} else {
+  revised_gamm <- readRDS("models/revised_gamm.rds")
+}
+```
+
+
+## ANOVA
+```{r}
+anova(revised_gamm$gam)
+```
+
+## Summary
+```{r}
+summary(revised_gamm$gam)
+```
+
+## Structure of the GAM
+Interestingly, differences between sites and differences in slopes are marginally
+not significant in this simplified model.
+```{r}
+plot(revised_gamm$gam)
+```
+
+## Diagnostic Plots
+The help files for `gam.check()` suggest using care when interpreting results
+for GAMM models, since the function does not correctly incorporate the error
+correlations structure.  However, for our purposes, this is probably sufficient,
+since our focus is not on statistical significance, but on estimation.
+```{r}
+gam.check(revised_gamm$gam)
+```
+
+No appreciable changes in moidel adequacy.
+
+# Model with Separate Years
+```{r years_gamm, cache = TRUE}
+if (! file.exists("models/years_gamm.rds")) {
+  years_gamm <- gamm(log(Chl_Median) ~ Site + 
+                     s(lPrecip) + 
+                     s(wlPrecip) +
+                     s(FlowIndex) +
+                     Month +
+                     Year_f,
+                   correlation = corAR1(0.8),
+                   na.action = na.omit, 
+                   method = 'REML',
+                   data = reduced_data)
+  saveRDS(years_gamm, file="models/years_gamm.rds")
+} else {
+  years_gamm <- readRDS("models/years_gamm.rds")
+}
+```
+
+## ANOVA
+```{r}
+anova(years_gamm$gam)
+```
+
+## Diagnostic Plots
+The help files for `gam.check()` suggest using care when interpreting results
+for GAMM models, since the function does not correctly incorporate the error
+correlations structure.  However, for our purposes, this is probably sufficient,
+since our focus is not on statistical significance, but on estimation.
+```{r}
+gam.check(years_gamm$gam)
+```
+
+# Compare AIC
+```{r}
+AIC(revised_gamm$lme)
+AIC(the_gamm$lme)
+AIC(years_gamm$lme)
+```
+So the a model that fits multiple slopes is not justified, while a model
+that includes separate terms for each year fits substantially better. A linear
+fit for the year here is probably an oversimplification.
+
