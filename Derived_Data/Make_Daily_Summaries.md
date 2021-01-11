@@ -43,14 +43,14 @@ library(lubridate)
 library(tidyverse)
 ```
 
-    ## -- Attaching packages ----------------------------------------------------------------------------------- tidyverse 1.3.0 --
+    ## -- Attaching packages --------------------------------------- tidyverse 1.3.0 --
 
     ## v ggplot2 3.3.2     v dplyr   1.0.2
-    ## v tibble  3.0.3     v stringr 1.4.0
+    ## v tibble  3.0.4     v stringr 1.4.0
     ## v tidyr   1.1.2     v forcats 0.5.0
     ## v purrr   0.3.4
 
-    ## -- Conflicts -------------------------------------------------------------------------------------- tidyverse_conflicts() --
+    ## -- Conflicts ------------------------------------------ tidyverse_conflicts() --
     ## x lubridate::as.difftime() masks base::as.difftime()
     ## x lubridate::date()        masks base::date()
     ## x dplyr::filter()          masks stats::filter()
@@ -349,7 +349,9 @@ Percent saturation standards, and FALSE if it fails either.
 
 ``` r
 exceedance_data <- daily_data %>%
-  select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
+  select(sdate, Site, Year, Month,
+         Precip, PPrecip, MaxT, D_Median,
+         DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
   mutate(ClassCDO = DO_Min >= tClassCDO, 
          ClassBDO = DO_Min >= tClassBDO,
          ClassC_PctSat = PctSat_Min > tClassCPctSat,

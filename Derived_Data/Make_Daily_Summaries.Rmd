@@ -255,7 +255,9 @@ The "BOTH" values should turn up TRUE if the day passes both DO and Percent
 saturation standards, and FALSE if it fails either. 
 ```{r}
 exceedance_data <- daily_data %>%
-  select(sdate, Site, Year, Month, Precip, PPrecip, MaxT, DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
+  select(sdate, Site, Year, Month,
+         Precip, PPrecip, MaxT, D_Median,
+         DO_Min, PctSat_Min, Chl_Max, T_Max, T_Mean) %>%
   mutate(ClassCDO = DO_Min >= tClassCDO, 
          ClassBDO = DO_Min >= tClassBDO,
          ClassC_PctSat = PctSat_Min > tClassCPctSat,
