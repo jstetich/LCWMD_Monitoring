@@ -34,13 +34,8 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
           - [Added Boxplots – Observed
             Medians](#added-boxplots-observed-medians)
           - [By Imperviousness](#by-imperviousness)
-          - [A Table](#a-table)
-          - [Points Only](#points-only)
-          - [Marginal Means and 95% CI](#marginal-means-and-95-ci-1)
-          - [Added Boxplots – Observed
-            Medians](#added-boxplots-observed-medians-1)
       - [By Month](#by-month-1)
-          - [Marginal Means and 95% CI](#marginal-means-and-95-ci-2)
+          - [Marginal Means and 95% CI](#marginal-means-and-95-ci-1)
       - [Trends](#trends-1)
           - [Violin Plot](#violin-plot)
           - [Jitter Plot](#jitter-plot)
@@ -316,7 +311,7 @@ full_data %>%
 #> Warning: Removed 1214 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/Show_bad_datum-1.png" style="display: block; margin: auto;" />
 
 We remove the Chloride value from the data.
 
@@ -493,16 +488,17 @@ the_call <-  quote(gamm(log(Chl_Median) ~ Site +
                         method = 'REML',
                         data = reduced_data))
 revised_gamm$gam$call <- the_call
+
+
+my_ref_grid <- ref_grid(revised_gamm, 
+                        at = list(Year = 2014), 
+                        cov.reduce = median,
+                        cov.keep = 'Month')
 ```
 
 ### By Month
 
 ``` r
-my_ref_grid <- ref_grid(revised_gamm, 
-                        at = list(Year = 2014), 
-                        cov.reduce = median,
-                        cov.keep = 'Month')
-
 by_month <- summary(emmeans(my_ref_grid, ~ Month, 
              type = 'response'))
 
@@ -522,7 +518,7 @@ plot(by_month) +
   theme_cbep(base_size = 12)
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-12-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/plot_monthly_gamm-1.png" style="display: block; margin: auto;" />
 
 Note that all estimated monthly means are somewhat lower than from the
 GLS model.
@@ -546,19 +542,19 @@ plot(by_site) +
   theme_cbep(base_size = 12)
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/plot_site_gamm-1.png" style="display: block; margin: auto;" />
 
 ### Trends
 
 We extract results on the log scale, so we can calculate the linear
 predictor by hand, then back transform.
 
-Note that our “best” model does not include terms different slopes among
-the different sites. We have two choices: fit a single graphical line
-that represents the average trends across all sites, or fit parallel
-lines for each site.
+Note that our “best” model does not include different slopes among the
+different sites. We have two choices: fit a single graphical line that
+represents the average trends across all sites, or fit parallel lines
+for each site.
 
-#### Annual Means.
+#### Annual Means
 
 ``` r
 my_means <- reduced_data %>%
@@ -610,7 +606,7 @@ ggplot(one_slope, aes(x = Year, y = pred)) +
   theme_cbep(base_size = 12)
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/single_step-1.png" style="display: block; margin: auto;" />
 
 #### Multiple Trendlines
 
@@ -660,7 +656,7 @@ ggplot(pred_df, aes(x = Year, y = pred, color = Site)) +
 #> Warning: Removed 6 row(s) containing missing values (geom_path).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/multiple_step-1.png" style="display: block; margin: auto;" />
 
 # Graphic Alternatives
 
@@ -701,7 +697,7 @@ geom_point(aes(x = Site, y = response),  data = by_site,
 #> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/site_violin_emms-1.png" style="display: block; margin: auto;" />
 
 ``` r
   #scale_y_log10()
@@ -713,25 +709,52 @@ geom_point(aes(x = Site, y = response),  data = by_site,
 plt1 +
   geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-22-1.png" style="display: block; margin: auto;" />
-
-``` r
+  #stat_summary(fun = "median",
+  #            geom ='point', shape = 18, size = 2)
 ggsave('figures/chl_Site_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
 #> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
 #> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+```
+
+<img src="Chloride_Graphics_files/figure-gfm/site_violins_boxes-1.png" style="display: block; margin: auto;" />
+
+``` r
+xanchor = 0.75
+
+plt1 +
+  geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1200, xmax =xanchor + 0.1, ymax = 1400,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1300, xend = xanchor + 0.1, yend = 1300, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.2, y = 1200,
+           hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.2, y = 1300,
+           hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.2, y = 1400,
+           hjust = 0, size = 3, label = '75th percentile')
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+```
+
+<img src="Chloride_Graphics_files/figure-gfm/site_violins_boxes_annot-1.png" style="display: block; margin: auto;" />
+
+``` r
+
+ggsave('figures/chl_Site_violin_w_bo_annot.pdf', device = cairo_pdf, width = 5, height = 4)
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
 ```
 
 ### By Imperviousness
 
-### A Table
+#### A Table
 
 ``` r
 reduced_data %>%
@@ -752,12 +775,16 @@ knitr::kable(align = "lcc")
 | S03  |             41.2             |         314.0          |
 | S01  |             56.1             |         402.4          |
 
-### Points Only
+#### Points Only
 
 We tried repeatedly to alter the y axis limits, but `ggplot2` kept
 placing the `stat_summary()` points incorrectly. For example, S01 is
 about 400 mg.l, but after altering the y axis limits with `ylim()`, the
-points appear closer to 350 mg/l.
+points appear closer to 350 mg/l. We have tried to reproduce this
+behavior in a minimal reprex, but with no luck.
+
+We prefer a version with slightly misplaced labels to one with a
+misleading Y axis.
 
 ``` r
 locs <- reduced_data %>%
@@ -787,17 +814,21 @@ plt <- reduced_data %>%
   ylab('Median Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
 
-
   theme_cbep(base_size = 12)
 plt
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/site_chl_medians_by_IC-1.png" style="display: block; margin: auto;" />
 
-\#Points and Ranges Her the default Y axis limits work, but if we alter
-the y axid labels, we see the same problem.
+``` r
 
-we have tried to reproduce this behavior, with no luck
+ggsave('figures/chl_b-_IC_points.pdf', device = cairo_pdf, width = 5, height = 4)
+```
+
+#### Points and Ranges
+
+Here the default Y axis limits work, but if we alter the y axis labels,
+we see the same problem.
 
 ``` r
 locs <- reduced_data %>%
@@ -833,7 +864,7 @@ plt <- reduced_data %>%
   geom_text(aes(x = xloc, y = yloc, label = Site), 
             hjust = 0, size = 4, data = locs) +
   
-  ylab('Median Chloride (mg/l)') +
+  ylab('Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
   xlim(c(0,60)) +
 
@@ -841,10 +872,26 @@ plt <- reduced_data %>%
   annotate('text', 0, 200, label = 'CCC', size = 3, hjust = 0) + 
   
   geom_hline(yintercept =  860, lty = 2) +
-  annotate('text', 0, 830, label = 'CMC', size = 3, hjust = 0) + 
+  annotate('text', 0, 830, label = 'CMC', size = 3, hjust = 0) +
+    
   
   theme_cbep(base_size = 12)
-plt
+```
+
+``` r
+plt +
+  annotate('segment', x= 0, y = 1000, xend = 0, yend = 1400,
+           color = cbep_colors()[1], size = .5) + 
+  annotate('segment', x= 0, y = 1100, xend = 0, yend = 1300, 
+           color = cbep_colors()[1], size = 3) +
+  annotate('point', x= 0, y = 1200,
+           fill = cbep_colors()[1], size = 4, shape = 23) +
+
+annotate('text', x= 2, y = 1000, hjust = 0, size = 3, label = 'minimum') +
+annotate('text', x= 2, y = 1100, hjust = 0, size = 3, label = '25th percentile') +
+annotate('text', x= 2, y = 1200, hjust = 0, size = 3, label = 'median') +
+annotate('text', x= 2, y = 1300, hjust = 0, size = 3, label = '75th percentile') +
+annotate('text', x= 2, y = 1400, hjust = 0, size = 3, label = 'maximum')
 #> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 
 #> Warning: Removed 1270 rows containing non-finite values (stat_summary).
@@ -852,73 +899,15 @@ plt
 #> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-25-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/site_chl_ranges_by_IC-1.png" style="display: block; margin: auto;" />
 
 ``` r
-x <- rnorm(100)
 
-Hmisc::smedian.hilow(x, conf.int=.5)  # 25th and 75th percentiles
-#>      Median       Lower       Upper 
-#>  0.01676247 -0.60991343  0.64049683
-Hmisc::smedian.hilow(x, conf.int=.75)
-#>      Median       Lower       Upper 
-#>  0.01676247 -1.03485893  0.97225249
-Hmisc::smedian.hilow(x, conf.int=1.0)
-#>      Median       Lower       Upper 
-#>  0.01676247 -2.29234597  2.48625026
-
-median_hilow(x)
-#>            y      ymin     ymax
-#> 1 0.01676247 -1.959091 2.002644
-median_hilow(x, conf.int = 1)
-#>            y      ymin    ymax
-#> 1 0.01676247 -2.292346 2.48625
-```
-
-``` 
- Median       Lower       Upper 
-```
-
-0.02036472 -0.76198947 0.71190404
-
-### Marginal Means and 95% CI
-
-``` r
-plt1 + 
-  #stat_summary(fun.data = "mean_se",
-  #               geom ='point', color = 'cbep_colors()[1]'red', alpha = 0.5) +
-  geom_segment(aes(x = Site, xend = Site, y = lower.CL, yend = upper.CL),
-               data = by_site, size  = 1.5, color = 'gray40') + 
-geom_point(aes(x = Site, y = response),  data = by_site,
-             size  = 2) 
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
-
-``` r
-  #scale_y_log10()
-```
-
-### Added Boxplots – Observed Medians
-
-``` r
-plt1 +
-  geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
-               color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+ggsave('figures/chl_b-_IC_ranges.pdf', device = cairo_pdf, width = 5, height = 4)
 #> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-28-1.png" style="display: block; margin: auto;" />
+#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 
-``` r
-ggsave('figures/chl_Site_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
 #> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 ```
 
@@ -941,6 +930,10 @@ plt2 <- reduced_data %>%
 
 ### Marginal Means and 95% CI
 
+The emms here are reasonable, but there is little advantage to
+interposing a model between data and the readers here, and nedians tell
+a similar story.
+
 ``` r
 plt2 + 
   # stat_summary(fun.data = "mean_se",
@@ -952,27 +945,55 @@ plt2 +
 #> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-30-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_month_emm-1.png" style="display: block; margin: auto;" />
 \#\#\# Added Boxplots
 
 ``` r
 plt2 +
   geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
+  #stat_summary(fun = "median",
+  #             geom ='point', shape = 18, size = 2.5)
+ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf,
+       width = 5, height = 4)
 #> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
 #> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1228 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-31-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_months_box-1.png" style="display: block; margin: auto;" />
 
 ``` r
-ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
+xanchor = 8
+
+plt2 +
+  geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1200, xmax =xanchor + 0.1, ymax = 1400,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1300, xend = xanchor + 0.1, yend = 1300, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.2, y = 1200,
+           hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.2, y = 1300,
+           hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.2, y = 1400,
+           hjust = 0, size = 3, label = '75th percentile')
 #> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
 #> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1228 rows containing non-finite values (stat_summary).
+```
+
+<img src="Chloride_Graphics_files/figure-gfm/chl_months_box_annot-1.png" style="display: block; margin: auto;" />
+
+``` r
+ggsave('figures/chl_month_violin_w_box_annot.pdf', device = cairo_pdf,
+       width = 5, height = 4)
+#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
+
+#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
 ```
 
 ## Trends
@@ -995,15 +1016,18 @@ plt3 <- reduced_data %>%
   scale_x_continuous(breaks= c(2010, 2012, 2014, 2016, 2018)) +
   
   geom_hline(yintercept =  230, lty = 2) +
-  annotate('text', 2009, 200, label = 'CCC', size = 3) + 
+  annotate('text', 2009.25, 200, label = 'CCC', size = 3) + 
   
   geom_hline(yintercept =  860, lty = 2) +
-  annotate('text', 2009, 830, label = 'CMC', size = 3) + 
+  annotate('text', 2009.25, 830, label = 'CMC', size = 3) + 
   
   theme_cbep(base_size = 12)
 ```
 
 #### Marginal Means
+
+The marginal means here gloss over significant year to year variability,
+and thus are an inappropriate graphic on their own.
 
 ``` r
 plt3 +
@@ -1012,178 +1036,95 @@ geom_point(aes(x = Year, y = pred),  data = one_slope,
 #> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-33-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_emm-1.png" style="display: block; margin: auto;" />
 \#\#\#\# Added Boxplots
 
 ``` r
 plt3 +
   geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white')  +
-    stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-34-1.png" style="display: block; margin: auto;" />
-
-``` r
+  # stat_summary(fun = "median",
+  #            geom ='point', shape = 18, size = 2.5)
 
 ggsave('figures/chl_year_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
 #> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
 #> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+```
+
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_box-1.png" style="display: block; margin: auto;" />
+
+``` r
+xanchor = 2016
+
+plt3 +
+  geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1400, xmax =xanchor + 0.15, ymax = 1600,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1500, xend = xanchor + 0.15, yend = 1500, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.35, y = 1400,
+            hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.3, y = 1500,
+            hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.3, y = 1600,
+            hjust = 0, size = 3, label = '75th percentile')
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+```
+
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_box_annot-1.png" style="display: block; margin: auto;" />
+
+``` r
+
+ggsave('figures/chl_year_violin_w_box_annot.pdf', device = cairo_pdf, width = 5, height = 4)
+#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
 ```
 
 #### Add Regression Line Behind Violins
+
+The regression line is confusing, since it is weather-adjusted.
 
 ``` r
 plt3.1 <- plt3 +
   geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white')  +
-    stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
-plt3.1$layers <- c(geom_line(aes(x = Year, y = pred), 
-                             data = one_slope, size = .75),
-                   plt3.1$layers)
-plt3.1
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-35-1.png" style="display: block; margin: auto;" />
-
-``` r
-ggsave('figures/chl_year_violin_w_box_predict.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-#### With Annual Averages
-
-``` r
-plt3 +
-stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-36-1.png" style="display: block; margin: auto;" />
-
-#### Add Predicted Points
-
-``` r
-plt3.1 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5) +
-  # stat_summary(fun = "median",
-  #              geom ='point', color = 'blue', alpha = 0.5, shape = 18, size = 3) +
+    #stat_summary(fun = "median",
+    #           geom ='point', shape = 18, size = 2.5)
   
-  geom_point(aes(x = Year, y = pred),  data = one_slope, 
-             shape = 18, size = 3, alpha = 0.5)
-plt3.1
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-37-1.png" style="display: block; margin: auto;" />
-
-#### Add Regression Line
-
-``` r
-plt3.1 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5) +
-  stat_summary(fun = "median",
-               geom ='point', color = 'blue', alpha = 0.5, shape = 18, size = 3)
+  annotate('rect', xmin = xanchor, ymin = 1400, xmax =xanchor + 0.15, ymax = 1600,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1500, xend = xanchor + 0.15, yend = 1500, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.35, y = 1400,
+            hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.3, y = 1500,
+            hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.3, y = 1600,
+            hjust = 0, size = 3, label = '75th percentile')
+  
   
 plt3.1$layers <- c(geom_line(aes(x = Year, y = pred), 
                              data = one_slope, size = .75),
                    plt3.1$layers)
 plt3.1
 #> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-38-1.png" style="display: block; margin: auto;" />
-
-#### Add multiple Regression Lines
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_emtrend-1.png" style="display: block; margin: auto;" />
 
 ``` r
-plt3.2 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[1], alpha = 0.5) +
-scale_color_manual(values = cbep_colors())
-#> Scale for 'colour' is already present. Adding another scale for 'colour',
-#> which will replace the existing scale.
-  
-plt3.2$layers <- c(geom_line(aes(x = Year, y = pred, 
-                                 color = Site), data = pred_df, size =.75),
-                   plt3.2$layers)
-plt3.2
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-#> Warning: Removed 5 row(s) containing missing values (geom_path).
+#ggsave('figures/chl_year_violin_w_box_predict.pdf', device = cairo_pdf,
+          #width = 5, height = 4)
 ```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-39-1.png" style="display: block; margin: auto;" />
-
-#### With Annual Site Means
-
-``` r
-plt3.3 <- plt3 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 2,
-             data = my_means)
-plt3.3
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1 rows containing missing values (geom_point).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-40-1.png" style="display: block; margin: auto;" />
-
-#### Add Single Regression Line
-
-``` r
-plt3.4 <- plt3 +
-  geom_point(aes(Year, MN, color = Site), size = 2,
-             data = pred_df)
-  
-  plt3.4$layers <- c(geom_line(aes(x = Year, y = pred),         
-            size = 1, data = one_slope), 
-                   plt3.4$layers)
-  
-plt3.4
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 6 rows containing missing values (geom_point).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-41-1.png" style="display: block; margin: auto;" />
-
-#### Add Regression Lines
-
-``` r
-plt3.4 <- plt3 +
-  geom_point(aes(Year, MN, color = Site), size = 2,
-             data = pred_df)
-
-plt3.4$layers <- c(geom_line(aes(x = Year, y = pred, 
-                                   color = Site), size = 1, data = pred_df), 
-                   plt3.4$layers)
-  
-plt3.4
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 5 row(s) containing missing values (geom_path).
-#> Warning: Removed 6 rows containing missing values (geom_point).
-```
-
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-42-1.png" style="display: block; margin: auto;" />
 
 ### Jitter Plot
 
@@ -1214,9 +1155,11 @@ plt4
 #> Warning: Removed 1270 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-43-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter-1.png" style="display: block; margin: auto;" />
 
 #### Add Single Regression Line
+
+Single regression line here is misleading.
 
 ``` r
 plt4 +
@@ -1225,37 +1168,36 @@ plt4 +
 #> Warning: Removed 1270 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-44-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_emtrend-1.png" style="display: block; margin: auto;" />
 
 #### Add Site Means
 
 ``` r
 plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 3,
-             data = pred_df)
+  stat_summary(aes(fill =Site), geom = 'point',
+               fun = mean,
+               pch = 23, size = 3)
+
 plt4.1
+#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 #> Warning: Removed 1270 rows containing missing values (geom_point).
-#> Warning: Removed 6 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-45-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means-1.png" style="display: block; margin: auto;" />
 
 #### Add Site Means Single Regression Line
 
 ``` r
-plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 3,
-             data = pred_df) +
+plt4.2 <- plt4.1 +
+
 geom_line(aes(x = Year, y = pred), 
               size = .75, data = one_slope)
-plt4.1
+plt4.2
+#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 #> Warning: Removed 1270 rows containing missing values (geom_point).
-#> Warning: Removed 6 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-46-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means_emtrend-1.png" style="display: block; margin: auto;" />
 
 #### Add Site Means and Multiple Regression Lines
 
@@ -1264,7 +1206,15 @@ legend came from
 [here](https://stackoverflow.com/questions/61096323/how-can-i-change-the-colour-line-size-and-shape-size-in-the-legend-independently).
 
 The key is writing a function to pass as the (undocumented?)
-“key\_glyph” parameter to the relevant geom, here `geom_lines()`.
+“key\_glyph” parameter to the relevant geom, here \`geom\_lines().
+
+The otehr trick here is manually inserting a layer at the back of the
+list of layers, rather than adding it to the front of the graphic.
+
+This graphic is not terrible, but the emtrend lines are still hard to
+understand, as they don’t clearly fit with the site means, largely
+because we are showing “parallel” lines as the interaction terms were
+not significant.
 
 ``` r
 narrow_line <- function(data, params, size) {
@@ -1273,26 +1223,22 @@ narrow_line <- function(data, params, size) {
   draw_key_path(data = data, params = params, size = size)
 }
 
-plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 2,
-             data = pred_df)
+plt4.3 <- plt4.1
 
-plt4.1$layers <- c(geom_line(aes(x = Year, y = pred, color = Site), 
-                             size = 1.25, 
-                             key_glyph = narrow_line, data = pred_df), 
-                   plt4.1$layers)
-  
+plt4.3$layers <- c(geom_line(aes(x = Year, y = pred, color = Site), 
+                               size = 1.25, 
+                               key_glyph = narrow_line, data = pred_df), 
+                     plt4.1$layers)
 
-plt4.1 +
- # guides(color = guide_legend(override.aes = list(size = 2))) +
+plt4.3 +
+  # guides(color = guide_legend(override.aes = list(size = 2))) +
   theme(legend.key.width=unit(.4,"inches"))
+#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
 #> Warning: Removed 5 row(s) containing missing values (geom_path).
 #> Warning: Removed 1270 rows containing missing values (geom_point).
-#> Warning: Removed 6 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-47-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means_multi_emtrend-1.png" style="display: block; margin: auto;" />
 
 #### Add Site Mean Lines and Regression Lines
 
@@ -1322,4 +1268,4 @@ plt4 +
 #> Warning: Removed 1 rows containing missing values (geom_point).
 ```
 
-<img src="Chloride_Graphics_files/figure-gfm/unnamed-chunk-48-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_all_extras-1.png" style="display: block; margin: auto;" />

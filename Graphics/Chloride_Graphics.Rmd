@@ -220,7 +220,7 @@ The data includes just a single chloride observation from site S06B from
 any year other than 2013.  While we do not know if the data point is legitimate
 or not, it has very high leverage in several models, and we suspect a 
 transcription error of some sort.
-```{r fig.width = 3, fig.height = 2}
+```{r Show_bad_datum, fig.width = 3, fig.height = 2}
 full_data %>%
   filter(Site == 'S06B') %>%
   select(sdate, Chl_Median) %>%
@@ -378,15 +378,17 @@ the_call <-  quote(gamm(log(Chl_Median) ~ Site +
                         data = reduced_data))
 revised_gamm$gam$call <- the_call
 
-```
 
-### By Month
-```{r}
 my_ref_grid <- ref_grid(revised_gamm, 
                         at = list(Year = 2014), 
                         cov.reduce = median,
                         cov.keep = 'Month')
 
+
+```
+
+### By Month
+```{r plot_monthly_gamm, fig.width = 5, fig.height = 4}
 by_month <- summary(emmeans(my_ref_grid, ~ Month, 
              type = 'response'))
 
@@ -410,7 +412,7 @@ Note that all estimated monthly means are somewhat lower than from the GLS
 model.
 
 ### By Site
-```{r fig.width = 5, fig.height = 4}
+```{r plot_site_gamm, fig.width = 5, fig.height = 4}
 by_site <- summary(emmeans(my_ref_grid, ~ Site, type = 'response'))
 
 labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
@@ -432,12 +434,12 @@ plot(by_site) +
 We extract results on the log scale, so we can calculate the linear 
 predictor by hand, then back transform.
 
-Note that our "best" model does not include terms different slopes among the 
+Note that our "best" model does not include different slopes among the 
 different sites.  We have two choices:  fit a single graphical line
 that represents the average trends across all sites, or fit parallel lines
 for each site.
 
-#### Annual Means.
+#### Annual Means
 ```{r}
 my_means <- reduced_data %>%
   select(Year, Site, Chl_Median) %>%
@@ -468,7 +470,7 @@ my_ref_grid <- ref_grid(revised_gamm,
 (slp <- unname(coef(revised_gamm$gam)['Year']))
 ```
 
-```{r}
+```{r single_step}
 one_slope <- tibble(Year = 2010:2018,
                     pred = exp((Year - 2014) * slp + intcpt))
 
@@ -509,7 +511,7 @@ pred_df <- tibble(Site =  rep(levels(reduced_data$Site), each = 9),
 ```  
 
 
-```{r}
+```{r  multiple_step}
 ggplot(pred_df, aes(x = Year, y = pred, color = Site)) +
          geom_step(direction = 'mid') +
   ylab('Chloride (mg/l)\n(Weather Adjusted)') +
@@ -547,7 +549,7 @@ plt1 <- reduced_data %>%
 ```
 
 ### Marginal Means and 95% CI
-```{r}
+```{r site_violin_emms}
 plt1 + 
   #stat_summary(fun.data = "mean_se",
   #               geom ='point', color = 'cbep_colors()[1]'red', alpha = 0.5) +
@@ -558,21 +560,41 @@ geom_point(aes(x = Site, y = response),  data = by_site,
   #scale_y_log10()
 ```
 ### Added Boxplots -- Observed Medians
-```{r}
+```{r site_violins_boxes}
 plt1 +
   geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2)
+  #stat_summary(fun = "median",
+  #            geom ='point', shape = 18, size = 2)
 ggsave('figures/chl_Site_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
 ```
 
+```{r site_violins_boxes_annot}
+xanchor = 0.75
+
+plt1 +
+  geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1200, xmax =xanchor + 0.1, ymax = 1400,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1300, xend = xanchor + 0.1, yend = 1300, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.2, y = 1200,
+           hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.2, y = 1300,
+           hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.2, y = 1400,
+           hjust = 0, size = 3, label = '75th percentile')
+
+ggsave('figures/chl_Site_violin_w_bo_annot.pdf', device = cairo_pdf, width = 5, height = 4)
+
+```
 
 ### By Imperviousness
-
-
-### A Table
-```{r}
+#### A Table
+```{r site_chl_by_IC_table}
 reduced_data %>%
   select(Site, Chl_Median, IC) %>%
   group_by(Site) %>%
@@ -583,13 +605,16 @@ reduced_data %>%
 knitr::kable(align = "lcc")
 ```
 
-### Points Only
+#### Points Only
 We tried repeatedly to alter the y axis limits, but `ggplot2` kept 
 placing the `stat_summary()` points incorrectly.  For example, S01 is about
 400 mg.l, but after altering the y axis limits with `ylim()`, the points
-appear closer to 350 mg/l.  
+appear closer to 350 mg/l.  We have tried to reproduce this behavior in a 
+minimal reprex, but with no luck.
 
-```{r}
+We prefer a version with slightly misplaced labels to one with a 
+misleading Y axis.
+```{r site_chl_medians_by_IC}
 locs <- reduced_data %>%
   select(Site, Chl_Median, IC) %>%
   group_by(Site) %>%
@@ -617,17 +642,17 @@ plt <- reduced_data %>%
   ylab('Median Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
 
-
   theme_cbep(base_size = 12)
 plt
+
+ggsave('figures/chl_b-_IC_points.pdf', device = cairo_pdf, width = 5, height = 4)
+
 ```
 
 
-#Points and Ranges
-Her the default Y axis limits work, but if we alter the y axid labels, we see
+#### Points and Ranges
+Here the default Y axis limits work, but if we alter the y axis labels, we see
 the same problem.
-
-we have tried to reproduce this behavior, with no luck
 ```{r}
 locs <- reduced_data %>%
   select(Site, Chl_Median, IC) %>%
@@ -662,7 +687,7 @@ plt <- reduced_data %>%
   geom_text(aes(x = xloc, y = yloc, label = Site), 
             hjust = 0, size = 4, data = locs) +
   
-  ylab('Median Chloride (mg/l)') +
+  ylab('Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
   xlim(c(0,60)) +
 
@@ -670,56 +695,29 @@ plt <- reduced_data %>%
   annotate('text', 0, 200, label = 'CCC', size = 3, hjust = 0) + 
   
   geom_hline(yintercept =  860, lty = 2) +
-  annotate('text', 0, 830, label = 'CMC', size = 3, hjust = 0) + 
+  annotate('text', 0, 830, label = 'CMC', size = 3, hjust = 0) +
+    
   
   theme_cbep(base_size = 12)
-plt
 ```
 
-```{r}
-x <- rnorm(100)
+```{r site_chl_ranges_by_IC}
+plt +
+  annotate('segment', x= 0, y = 1000, xend = 0, yend = 1400,
+           color = cbep_colors()[1], size = .5) + 
+  annotate('segment', x= 0, y = 1100, xend = 0, yend = 1300, 
+           color = cbep_colors()[1], size = 3) +
+  annotate('point', x= 0, y = 1200,
+           fill = cbep_colors()[1], size = 4, shape = 23) +
 
-Hmisc::smedian.hilow(x, conf.int=.5)  # 25th and 75th percentiles
-Hmisc::smedian.hilow(x, conf.int=.75)
-Hmisc::smedian.hilow(x, conf.int=1.0)
+annotate('text', x= 2, y = 1000, hjust = 0, size = 3, label = 'minimum') +
+annotate('text', x= 2, y = 1100, hjust = 0, size = 3, label = '25th percentile') +
+annotate('text', x= 2, y = 1200, hjust = 0, size = 3, label = 'median') +
+annotate('text', x= 2, y = 1300, hjust = 0, size = 3, label = '75th percentile') +
+annotate('text', x= 2, y = 1400, hjust = 0, size = 3, label = 'maximum')
 
-median_hilow(x)
-median_hilow(x, conf.int = 1)
+ggsave('figures/chl_b-_IC_ranges.pdf', device = cairo_pdf, width = 5, height = 4)
 ```
-
-
-     Median       Lower       Upper 
- 0.02036472 -0.76198947  0.71190404 
-
-
-
-
-
-
-
-### Marginal Means and 95% CI
-```{r}
-plt1 + 
-  #stat_summary(fun.data = "mean_se",
-  #               geom ='point', color = 'cbep_colors()[1]'red', alpha = 0.5) +
-  geom_segment(aes(x = Site, xend = Site, y = lower.CL, yend = upper.CL),
-               data = by_site, size  = 1.5, color = 'gray40') + 
-geom_point(aes(x = Site, y = response),  data = by_site,
-             size  = 2) 
-  #scale_y_log10()
-```
-### Added Boxplots -- Observed Medians
-```{r}
-plt1 +
-  geom_boxplot(width=0.1, coef = 0, outlier.shape = NA,
-               color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2)
-ggsave('figures/chl_Site_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
-```
-
-
-
 
 ## By Month
 ```{r}
@@ -738,7 +736,9 @@ plt2 <- reduced_data %>%
 ```
 
 ### Marginal Means and 95% CI
-```{r}
+The emms here are reasonable, but there is little advantage to interposing a
+model between data and the readers here, and nedians tell a similar story.
+```{r chl_month_emm}
 plt2 + 
   # stat_summary(fun.data = "mean_se",
   #                geom ='pointrange', color = 'red', alpha = 0.5) +
@@ -748,18 +748,41 @@ plt2 +
                size = 2, color = 'gray30')
 ```
 ### Added Boxplots
-```{r}
+```{r chl_months_box}
 plt2 +
   geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white') +
-  stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
-ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
+  #stat_summary(fun = "median",
+  #             geom ='point', shape = 18, size = 2.5)
+ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf,
+       width = 5, height = 4)
 ```
+
+```{r chl_months_box_annot}
+xanchor = 8
+
+plt2 +
+  geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1200, xmax =xanchor + 0.1, ymax = 1400,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1300, xend = xanchor + 0.1, yend = 1300, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.2, y = 1200,
+           hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.2, y = 1300,
+           hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.2, y = 1400,
+           hjust = 0, size = 3, label = '75th percentile')
+ggsave('figures/chl_month_violin_w_box_annot.pdf', device = cairo_pdf,
+       width = 5, height = 4)
+```
+
 
 ## Trends
 ### Violin Plot
-
 ```{r}
 labl <- 'Estimated Annual Mean Chlorides\nWeather Adjusted'
 
@@ -776,133 +799,88 @@ plt3 <- reduced_data %>%
   scale_x_continuous(breaks= c(2010, 2012, 2014, 2016, 2018)) +
   
   geom_hline(yintercept =  230, lty = 2) +
-  annotate('text', 2009, 200, label = 'CCC', size = 3) + 
+  annotate('text', 2009.25, 200, label = 'CCC', size = 3) + 
   
   geom_hline(yintercept =  860, lty = 2) +
-  annotate('text', 2009, 830, label = 'CMC', size = 3) + 
+  annotate('text', 2009.25, 830, label = 'CMC', size = 3) + 
   
   theme_cbep(base_size = 12)
 ```
 
 #### Marginal Means
-```{r}
+The marginal means here gloss over significant year to year variability, and 
+thus are an inappropriate graphic on their own.
+```{r chl_year_emm}
 plt3 +
 geom_point(aes(x = Year, y = pred),  data = one_slope,
              size  = 2) 
 ```
 #### Added Boxplots
-```{r}
+```{r chl_year_box}
 plt3 +
   geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white')  +
-    stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
+  # stat_summary(fun = "median",
+  #            geom ='point', shape = 18, size = 2.5)
 
 ggsave('figures/chl_year_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
 ```
 
+```{r chl_year_box_annot}
+xanchor = 2016
+
+plt3 +
+  geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
+               color= 'gray30', fill = 'white') +
+  
+  annotate('rect', xmin = xanchor, ymin = 1400, xmax =xanchor + 0.15, ymax = 1600,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1500, xend = xanchor + 0.15, yend = 1500, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.35, y = 1400,
+            hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.3, y = 1500,
+            hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.3, y = 1600,
+            hjust = 0, size = 3, label = '75th percentile')
+
+ggsave('figures/chl_year_violin_w_box_annot.pdf', device = cairo_pdf, width = 5, height = 4)
+
+```
+
 #### Add Regression Line Behind Violins
-```{r}
+The regression line is confusing, since it is weather-adjusted.
+```{r chl_year_emtrend}
 plt3.1 <- plt3 +
   geom_boxplot(aes(group = Year), width=0.15, coef = 0, outlier.shape = NA,
                color= 'gray30', fill = 'white')  +
-    stat_summary(fun = "median",
-               geom ='point', shape = 18, size = 2.5)
-plt3.1$layers <- c(geom_line(aes(x = Year, y = pred), 
-                             data = one_slope, size = .75),
-                   plt3.1$layers)
-plt3.1
-ggsave('figures/chl_year_violin_w_box_predict.pdf', device = cairo_pdf, width = 5, height = 4)
-```
-
-
-#### With Annual Averages
-```{r}
-plt3 +
-stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5)
-```
-
-
-#### Add Predicted Points
-```{r}
-plt3.1 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5) +
-  # stat_summary(fun = "median",
-  #              geom ='point', color = 'blue', alpha = 0.5, shape = 18, size = 3) +
+    #stat_summary(fun = "median",
+    #           geom ='point', shape = 18, size = 2.5)
   
-  geom_point(aes(x = Year, y = pred),  data = one_slope, 
-             shape = 18, size = 3, alpha = 0.5)
-plt3.1
-```
-
-#### Add Regression Line
-```{r}
-plt3.1 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[5], alpha = 0.5) +
-  stat_summary(fun = "median",
-               geom ='point', color = 'blue', alpha = 0.5, shape = 18, size = 3)
+  annotate('rect', xmin = xanchor, ymin = 1400, xmax =xanchor + 0.15, ymax = 1600,
+           fill = 'white', color = 'gray30', size = .5) + 
+  annotate('segment', x= xanchor, y = 1500, xend = xanchor + 0.15, yend = 1500, 
+           color = 'gray30') +
+  
+  annotate('text', x= xanchor + 0.35, y = 1400,
+            hjust = 0, size = 3, label = '25th percentile') +
+  annotate('text', x= xanchor + 0.3, y = 1500,
+            hjust = 0, size = 3, label = 'median') +
+  annotate('text', x= xanchor + 0.3, y = 1600,
+            hjust = 0, size = 3, label = '75th percentile')
+  
   
 plt3.1$layers <- c(geom_line(aes(x = Year, y = pred), 
                              data = one_slope, size = .75),
                    plt3.1$layers)
 plt3.1
+#ggsave('figures/chl_year_violin_w_box_predict.pdf', device = cairo_pdf,
+          #width = 5, height = 4)
 ```
-
-#### Add multiple Regression Lines
-```{r}
-plt3.2 <- plt3 +
-  stat_summary(fun.data = "mean_se",
-               geom ='pointrange', color = cbep_colors()[1], alpha = 0.5) +
-scale_color_manual(values = cbep_colors())
-  
-plt3.2$layers <- c(geom_line(aes(x = Year, y = pred, 
-                                 color = Site), data = pred_df, size =.75),
-                   plt3.2$layers)
-plt3.2
-```
-
-####  With Annual Site Means
-```{r, fig.width = 7, fig.height = 5}
-plt3.3 <- plt3 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 2,
-             data = my_means)
-plt3.3
-```
-
-
-####  Add Single Regression Line
-```{r, fig.width = 7, fig.height = 5}
-plt3.4 <- plt3 +
-  geom_point(aes(Year, MN, color = Site), size = 2,
-             data = pred_df)
-  
-  plt3.4$layers <- c(geom_line(aes(x = Year, y = pred),         
-            size = 1, data = one_slope), 
-                   plt3.4$layers)
-  
-plt3.4
-```
-
-#### Add Regression Lines
-```{r, fig.width = 7, fig.height = 5}
-plt3.4 <- plt3 +
-  geom_point(aes(Year, MN, color = Site), size = 2,
-             data = pred_df)
-
-plt3.4$layers <- c(geom_line(aes(x = Year, y = pred, 
-                                   color = Site), size = 1, data = pred_df), 
-                   plt3.4$layers)
-  
-plt3.4
-```
-
 
 ### Jitter Plot
-```{r fig.width = 6, fig.height = 4}
+```{r chl_year_jitter, fig.width = 6, fig.height = 4}
 plt4 <- reduced_data %>%
   ggplot(aes(x = Year, y = Chl_Median)) +
   geom_jitter(aes(group = Year, color = Site),
@@ -929,30 +907,30 @@ plt4
 ```
 
 #### Add Single Regression Line
-```{r fig.width = 6, fig.height = 4}
+Single regression line here is misleading.
+```{r chl_year_jitter_emtrend, fig.width = 6, fig.height = 4}
 plt4 +
   geom_line(aes(x = Year, y = pred), 
               size = .75, data = one_slope)
 ```
 
 #### Add Site Means
-```{r fig.width = 6, fig.height = 4}
+```{r chl_year_jitter_site_means, fig.width = 6, fig.height = 4}
 plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 3,
-             data = pred_df)
+  stat_summary(aes(fill =Site), geom = 'point',
+               fun = mean,
+               pch = 23, size = 3)
+
 plt4.1
 ```
 
 #### Add Site Means Single Regression Line
-```{r fig.width = 6, fig.height = 4}
-plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 3,
-             data = pred_df) +
+```{r chl_year_jitter_site_means_emtrend, fig.width = 6, fig.height = 4}
+plt4.2 <- plt4.1 +
+
 geom_line(aes(x = Year, y = pred), 
               size = .75, data = one_slope)
-plt4.1
+plt4.2
 ```
 
 
@@ -961,34 +939,37 @@ Solution to separately control width of points and lines in a single legend came
 from [here](https://stackoverflow.com/questions/61096323/how-can-i-change-the-colour-line-size-and-shape-size-in-the-legend-independently).
 
 The key is writing a function to pass as  the (undocumented?) "key_glyph"
-parameter to the relevant geom, here `geom_lines()`.
+parameter to the relevant geom, here `geom_lines().
 
-```{r fig.width = 6, fig.height = 4}
+The otehr trick here is manually inserting a layer at the back of the list of
+layers, rather than adding it to the front of the graphic.
+
+This graphic is not terrible, but the emtrend lines are still hard to
+understand, as they don't clearly fit with the site means, largely because we
+are showing "parallel" lines as the interaction terms were not significant.
+
+```{r chl_year_jitter_site_means_multi_emtrend, fig.width = 6, fig.height = 4}
 narrow_line <- function(data, params, size) {
   # Multiply by some number
   data$size <- data$size / 4
   draw_key_path(data = data, params = params, size = size)
 }
 
-plt4.1 <- plt4 +
-  geom_point(aes(Year, MN, fill = Site),
-             colour="black", pch=23, size = 2,
-             data = pred_df)
+plt4.3 <- plt4.1
 
-plt4.1$layers <- c(geom_line(aes(x = Year, y = pred, color = Site), 
-                             size = 1.25, 
-                             key_glyph = narrow_line, data = pred_df), 
-                   plt4.1$layers)
-  
+plt4.3$layers <- c(geom_line(aes(x = Year, y = pred, color = Site), 
+                               size = 1.25, 
+                               key_glyph = narrow_line, data = pred_df), 
+                     plt4.1$layers)
 
-plt4.1 +
- # guides(color = guide_legend(override.aes = list(size = 2))) +
+plt4.3 +
+  # guides(color = guide_legend(override.aes = list(size = 2))) +
   theme(legend.key.width=unit(.4,"inches"))
 
 ```
  
 #### Add Site Mean Lines and Regression Lines
-```{r fig.width = 6, fig.height = 4}
+```{r chl_year_jitter_all_extras, fig.width = 6, fig.height = 4}
 narrow_line <- function(data, params, size) {
   # Multiply by some number
   data$size <- data$size / 4
