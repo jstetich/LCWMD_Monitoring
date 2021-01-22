@@ -1,0 +1,1093 @@
+---
+title: "Analysis of LCWMD 'Diurnal Exceedences' of Class C DO Standards"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "01/12/2021"
+output:
+  github_document:
+    toc: true
+    fig_width: 5
+    fig_height: 3
+---
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
+# Introduction
+The Long Creek Watershed, almost three and a half square miles in area, is
+dominated by commercial land use. The Maine Mall is one of the largest land
+owners in the watershed, and it is surrounded by a range of commercial
+businesses, from medical offices, to car washes.  About a third of the watershed
+in impervious surfaces like roads, parking lots, and rooftops.
+
+Landowners with an acre or more of impervious area are required to get a Clean
+Water Act permit for stormwater discharges from their property.  The LCWMD
+provides an alternative for landowners to working to receive an individual
+permit. Landowners who elect to participate in the The Long Creek Watershed
+Management District receive a General Permit, in return for providing funding to
+the District, and facilitating the work of the district by permitting access to
+their property for certain activities.
+
+For more information on LCWMD, see [their web site](restorelongcreek.org).
+
+Over the past decade, LCWMD has contracted with several consulting firms to
+provide  water quality monitoring services along Long Creek.  This has produced
+one of the most extensive and best documented data set from the Northeastern US 
+looking at water quality conditions in an urban stream.
+
+GZA Geoenvironmental Incorporated (GZA) has been the primary monitoring
+contractor for LCWMD for several years, and in 2019, they conducted a thorough
+review of LCWMD data. These analyses are based on their summary data sets, and
+recapitulate and extend their analyses.
+
+## Are Water Quality Criteria Met?
+The primary question we ask in this Notebook, is whether water quality criteria 
+pertaining to levels of dissolved oxygen are met. In poarticular, we explore
+various ways of modelling those probabilities, and settle on modelling only 
+summertime probabilities as the most informative for State of Casco Bay readers.
+
+We ask whether the probability of failing to meet criteria each day is
+changing.  Secondarily, we examine differences among sites in the probability of
+failing criteria.
+
+In this data set a "TRUE" value consistently implies that water quality criteria
+were met or exceeded, whether that is achieved by a value higher than or lower
+than some numeric criteria.  "TRUE" implies good conditions.  "FALSE" implies 
+bad conditions.
+    
+## Sources of Threshold Values  
+### Dissolved oxygen
+Maine’s Class B waterquality standards call for dissolved oxygen above 7 mg/l,
+with percent saturation above 75%. The Class C Standards, which apply to almost
+all of Long Creek, call for dissolved oxygen above 5 mg/l, with percent
+saturation above 60%. In addition, for class C conditions, the thirty day
+average dissolved oxygen muststay above 6.5 mg/l.
+
+### Chloride
+Maine uses established thresholds for both chronic and acute exposure to
+chloride. These are the “CCC and CMC” standards for chloride in freshwater.
+(06-096 CMR 584). These terms are defined in a footnote as follows:
+
+>   The Criteria Maximum Concentration (CMC) is an estimate of the highest
+    concentration of a material in surface water to which an aquatic community
+    can be exposed briefly without resulting in an unacceptable effect. The
+    Criterion Continuous Concentration (CCC) is an estimate of the highest
+    concentration of a material in surface water to which an aquatic community
+    can be exposed indefinitely without resulting in an unacceptable effect.
+
+The relevant thresholds are:
+
+*   Chloride CCC  = 230  mg/l
+*   Chloride CMC  = 860  mg/l
+
+In practice, chloride in Long Creek are indirectly estimated based on 
+measurement of conductivity.  The chloride-conductivity correlations is fairly
+close and robust, but estimation is an additional source of error, although 
+generally on the level of 10% or less.
+
+### Temperature
+There are no legally binding Maine criteria for maximum stream temperature, but
+we can back into thresholds based on research on thermal tolerance of brook
+trout in streams. A study from Michigan and Wisconsin, showed that trout are
+found in streams with daily mean water temperatures as high as 25.3°C, but only
+if the period of exceedence of that daily average temperature is short – only
+one day. Similarly, the one day daily maximum temperature above which trout were
+never found was 27.6°C. That generates two temperature criteria, one for daily
+averages, and one for daily maximums. 
+
+These criteria should be taken as rough values only, as the  original study was
+observational, and thus the key driver of suitability for trout could be
+another stressor correlated with these temperature metrics.
+
+>  Wehrly, Kevin E.; Wang, Lizhu; Mitro, Matthew (2007). “Field‐Based Estimates
+   of Thermal Tolerance Limits for Trout: Incorporating Exposure Time and
+   Temperature Fluctuation.” Transactions of the American Fisheries Society
+   136(2):365-374.
+
+# Import Libraries  
+```{r}
+library(nlme)      # Supports glmmPQL()
+library(MASS)      # for glmmPQL() function, which allows correlation in GLM
+
+library(glmmTMB)   # An alternate -- possibly more robust -- fitting algorithm
+
+library(mgcv)
+
+library(tidyverse)  # Has to load after MASS, so `select()` is not masked
+library(readr)
+
+#library(vcd)      # contains contingency table plotting fxn 'mosaic' -- NOT essential
+#library(lme4)     # For mixed effects models and GLMER models
+#library(mgcv)     # For mixed effects GAMMs -- probably not needed here yet.
+
+
+library(emmeans)  # Provides tools for calculating marginal means
+
+library(CBEPgraphics)
+load_cbep_fonts()
+theme_set(theme_cbep())
+
+library(LCensMeans)
+```
+
+# Data Preparation
+## Folder References
+```{r}
+sibfldnm    <- 'Derived_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
+dir.create(file.path(getwd(), 'models'), showWarnings = FALSE)
+```
+
+## Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek
+Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
+Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
+November 13, 2019 File No. 09.0025977.02.
+
+Cumulative Area and IC calculations are our own, based on the GZA data and the
+geometry of the stream channel.
+
+```{r}
+# Read in data and drop the East Branch, where we have no data
+fn <- "Site_IC_Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
+```
+
+## Main Data
+We remove 2019 data, as we don't have a complete year's worth of data, which may
+bias annual summaries.
+
+Note that this data does NOT include all of the predictors used in some models
+looking at chlorides. In particular, it does not include stream flow estimates 
+```{r}
+fn <- "Exceeds_Data.csv"
+exceeds = read_csv(file.path(sibling, fn), progress=FALSE) %>%
+  mutate(IC=Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)]) %>%
+  select(-X1) %>%
+  filter(Year < 2019) %>%
+  mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
+  mutate(year_f = factor(Year),
+         month_f = factor(Month, levels = 1:12, labels = month.abb),
+         season = cut(Month, breaks = c(0,2,5,8,11,13),
+                      labels = c('Winter', 'Spring',
+                                 'Summer', 'Fall', 'Winter')),
+         season = factor(season, levels = c('Winter', 'Spring', 
+                                           'Summer', 'Fall'))) %>%
+  mutate(lPrecip = log1p(Precip))
+```
+
+## Data Corrections
+### Anomolous Depth Values
+Several depth observations in the record appear highly unlikely. In particular,
+several observations show daily median water depths over 15 meters. A few other
+observations show daily median depths over 4 meters, which also looks unlikely
+in a stream of this size.  All these events also occurred in May or June of 2015
+at site S05. Some sort of malfunction of the pressure transducer appears likely.
+
+We can trace these observations back to the raw QA/QC'd pressure and sonde data 
+submitted to LCWMD by GZA, so they are not an artifact of our data preparation.
+
+We remove these extreme values.  The other daily medians in May and June of 2015
+appear reasonable, and we leave them in place, although given possible 
+instability of the pressure sensors, it might make sense to remove them all.
+
+Note that removing depth observations from Site S05  will remove those DATES
+from any model that uses the `FlowIndex` variable (see below) as a predictor.
+```{r}
+exceeds <- exceeds %>%
+  mutate(D_Median = if_else(D_Median > 4, NA_real_, D_Median),
+         lD_Median = log1p(D_Median))
+```
+
+### Single S06B Chloride Observation from 2017
+The data includes just a single chloride observation from site S06B from
+any year other than 2013.  While we do not know if the data point is legitimate
+or not, it has  high leverage in several models, and we suspect a 
+transcription error of some sort.
+
+We remove the Chloride value from the data.
+```{r}
+exceeds <- exceeds %>%
+  mutate(ChlCCC = if_else(Site == 'S06B' & Year > 2014,
+                              NA, ChlCCC),
+         ChlCMC = if_else(Site == 'S06B' & Year > 2014,
+                              NA, ChlCMC))
+```
+
+## Add Stream Flow Index
+We worked through many models on a site by site basis in which we included data
+on water depth, but since the depth coordinate is site-specific, a 10 cm depth
+at one site may be exceptional, while at another it is commonplace. We generally
+want not a local measure of stream depth, but a watershed-wide metric of high,
+medium, or low stream flow.
+
+Middle and Lower Maine Stem sites would be suitable for a general flow indicator
+across the watershed. The monitoring sites in that stretch of Long Creek include
+include S05 and S17, however only site S05 has been in continuous operation
+throughout the period of record, so we use depth data from S05 to construct
+our general stream flow indicator.
+
+Stream flow at S05 is correlated with flow at other sites, although not all that
+closely correlated to flow in the downstream tributaries (S01 and S03).
+```{r}
+exceeds %>%
+  select(sdate, Site, lD_Median) %>%
+  pivot_wider(names_from = Site, values_from = lD_Median) %>%
+  select( -sdate) %>%
+  cor(use = 'pairwise', method = 'pearson')
+
+```
+We use the log of the daily median flow at S05 as a general watershed-wide
+stream flow indicator, which we call `FlowIndex`.  We use the log of the raw
+median, to lessen the effect of the highly skewed distribution of stream depths
+on the metric.
+
+```{r}
+depth_data <- exceeds %>%
+  filter (Site == 'S05') %>%
+  select(sdate, lD_Median)
+
+exceeds <- exceeds %>%
+  mutate(FlowIndex = depth_data$lD_Median[match(sdate, depth_data$sdate)])
+
+rm(depth_data)
+```
+
+
+## A Caution
+Site S06B only has chloride data from a single year, so including it in temporal
+models causes problems.  Consider removing the Stie if problems arise.
+
+
+So, that shows the two types of problems are highly correlated....  It may 
+be better to treat temperatures as causal variables for DO in some kinds of 
+models.
+
+# Initial Cross Tabs
+## Utility Function
+This function just adds a percent summary column to a cross-tab.
+```{r}
+xt_pct <- function(.form, .dat) {
+  #.form = ensym(.form)
+
+  xt <- xtabs(.form, data = .dat)
+  xt <- cbind(xt, round(apply(xt, 1, function(X) X[1]/sum(X)), 3)*100)
+  names(xt[3]) <- 'Percent Fail'
+  return(xt)
+}
+```
+
+## Dissolved Oxygen
+```{r}
+xt_pct(~Year + ClassCDO, exceeds)
+```
+
+## Percent Saturation
+```{r}
+xt_pct(~Year + ClassC_PctSat, exceeds)
+```
+
+The two oxygen-related exceedences are correlated.  IN particular, no samples
+met the Percent Saturation standard, but failed the dissolved oxygen standard.
+```{r}
+xtabs(~ ClassCDO + ClassC_PctSat, data = exceeds)
+```
+
+## Chloride Chronic
+```{r}
+xt_pct(~Year + ChlCCC, exceeds)
+```
+But the Strong pattern is by sites.
+```{r}
+xt_pct(~Site + ChlCCC, exceeds)
+```
+
+## Chloride Acute
+```{r}
+xt_pct(~Year + ChlCMC, exceeds)
+```
+```{r}
+xt_pct(~Site + ChlCMC, exceeds)
+```
+## Temperature Daily Average
+```{r}
+xt_pct(~Year + AvgT_ex, exceeds)
+```
+
+```{r}
+xt_pct(~Site + AvgT_ex, exceeds)
+```
+```{r}
+xt_pct(~Year + MaxT_ex, exceeds)
+```
+
+```{r}
+xt_pct(~Site + MaxT_ex, exceeds)
+```
+```{r}
+xtabs(~Year + Site + MaxT_ex, data=exceeds)
+```
+So almost all temperature problems were the first couple of years, and were
+maximum temperature excursions, not daily averages.  Frequency is low enough
+so no practical statistical models will be informative. Temperature is not worth
+further analysis.
+
+However, temperature  is an important predictor of dissolved oxygen
+problems.
+
+# Dissolved Oxygen
+## Plots
+These are estimated as empirical relative frequencies, with error estimated 
+as two times the standard error of the estimate. 
+```{r}
+exceeds %>%
+  group_by(Site, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count),
+            .groups = 'drop') %>%
+  ggplot(aes(Year, do_p, color = Site)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err)) +
+  ylab('Probability of Passing DO Standard')
+```
+2016 was a rough year at most sites.
+
+Note thatfor some year/ site combination, we never had a failure to meet DO 
+standards.  This limits models we can fit.
+
+```{r}
+exceeds  %>%
+  group_by(month_f, Year) %>%
+  summarize(do_true = sum(ClassCDO, na.rm = TRUE),
+            do_count = sum(! is.na(ClassCDO)),
+            do_p = do_true/do_count,
+            do_err = do_p*(1-do_p)/sqrt(do_count)) %>%
+  ggplot(aes(Year, do_p, color = month_f)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = do_p-2 * do_err, ymax = do_p + 2 * do_err))
+```
+ That shows that 2016 was a tough year in June, July, August, and September,
+ while June and July were tough in 2018.  This highlights the role of drought 
+ in shaping conditions in Long Creek regarding dissolved oxygen.
+ 
+## Generalized Linear Models
+We start with binomial GLM models.  Although daily status is almost certainly NOT independent in time, we start without addressing autocorrelation.
+
+Because most days (all in some months) meet all DO criteria, we face significant 
+challenges estimating probabilities of passing the criteria.
+
+In essence, the problem is that for even moderately complex models, the
+probability of passing dissolved oxygen standards is 100% or near 100% for some
+combinations of parameters. That poses problems with estimation, as
+$logit(1) \approx \infty$.  This is an example of what known as the 
+"Hauck-Donner effect" in the literature.  Formally, the "Hauck-Donner effect"
+occurs when the parameter space is large enough so that "perfect separation" is
+occurring in parts of the model.
+
+Put another way, the model fit is on the boundary of the feasible space, with 
+$p \approx 1.0$ or $ p \approx 0$ for one or more combinations of parameters.
+
+That situation (at its worst) is oftenm flagged with a warning. `glm()` warns:
+"glm.fit: fitted probabilities numerically 0 or 1 occurred".
+
+This problem also poses challenges for any stepwise model selection process,
+as many parameters end up with enormous standard errors, not because they are
+not informative, but because the models are problematic.
+
+### The Full DO Record
+#### Multiple Models are "Too Large"
+```{r}
+month_alt_1 <- glm(ClassCDO ~ year_f + Site + 
+                   month_f  + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds, maxit = 100)
+```
+```{r}
+month_alt_2 <- glm(ClassCDO ~ year_f + Site + 
+                   month_f + FlowIndex,
+              family = 'binomial',
+                   data = exceeds, maxit = 100)
+```
+
+```{r}
+season_alt_1 <- glm(ClassCDO ~ year_f + Site + 
+                   season  + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds, maxit = 100)
+```
+
+```{r}
+season_alt_2 <- glm(ClassCDO ~ year_f + Site + 
+                   season + FlowIndex,
+              family = 'binomial',
+                   data = exceeds, maxit = 100)
+```
+
+```{r}
+year_alt_1 <- glm(ClassCDO ~ Site + year_f + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds, maxit = 1000)
+```
+
+That one provided no warnings, which is a good sign, but....
+```{r}
+summary(year_alt_1)
+```
+We still have high error terms for many fitted parameters, especially those 
+associated with the year, which here is the focus of our interest.
+
+### Seasonal Restrictions
+The consistent problem appears to be that the probability of 
+failing dissolved oxygen standards is zero or near zero for some combinations of 
+predictor variables. This suggest a couple of approaches:
+
+1.  Focusing on those situations where failing to meet class is most likely.  
+2.  Fitting models that partition the results intelligently, such as `rpart()`
+    models.  
+    
+#### Are there sites that never fail DO standards?  No.
+```{r}
+exceeds %>%
+  group_by(Site) %>%
+  summarise(failsonce = any( ! ClassCDO),
+            pct = round(sum(! ClassCDO, na.rm = TRUE) / sum(! is.na(ClassCDO)),3)*100)
+```
+#### Are there Months that never fail DO standards? January and February.
+```{r}
+exceeds %>%
+  group_by(Month) %>%
+  summarise(failsonce = any( ! ClassCDO),
+             pct = round(sum(! ClassCDO, na.rm = TRUE) / sum(! is.na(ClassCDO)),3)*100)
+```
+### Models for the 9 Warmer Months
+We have very little data from the three winter months (December, January, and
+February).  If we leave them out of the model, we can estimate more of the
+parameters we are interested in.
+
+Here we develop an alternate model, without the winter months, when data is very
+rare.  This eliminates the P = 1 and P = 0 cells in the model.
+```{r}
+exceeds_warm <- exceeds %>%
+  filter(! Month %in% c(12, 1, 2)) %>%
+  select(c(1:10, 20:23, 25)) %>%
+  filter(! is.na(ClassCDO),
+         ! is.na(lPrecip),
+         ! is.na(FlowIndex))
+```
+
+
+#### Multiple Models are STILL "Too Large"
+```{r}
+month_alt_1_warm <- glm(ClassCDO ~ year_f + Site + 
+                   month_f  + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_warm, maxit = 100)
+```
+
+```{r}
+month_alt_2_warm <- glm(ClassCDO ~ year_f + Site + 
+                   month_f + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_warm, maxit = 100)
+```
+
+```{r}
+season_alt_1_warm <- glm(ClassCDO ~ year_f + Site + 
+                   season  + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_warm, maxit = 100)
+```
+
+```{r}
+season_alt_2_warm <- glm(ClassCDO ~ year_f + Site + 
+                   season + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_warm, maxit = 100)
+```
+
+```{r}
+year_alt_1_warm <- glm(ClassCDO ~ Site + year_f + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_warm, maxit = 1000)
+```
+
+
+```{r}
+summary(year_alt_1_warm)
+```
+Again, we have very high standard errors, even in this simplified model.
+
+
+### June to September
+#### Most models are _STILL_ too large
+```{r}
+exceeds_four <- exceeds %>%
+  filter(Month  > 5 & Month < 10)
+```
+
+```{r}
+month_alt_1_four <- glm(ClassCDO ~ year_f + Site + 
+                   month_f  + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_four, maxit = 100)
+```
+
+```{r}
+month_alt_2_four <- glm(ClassCDO ~ year_f + Site + 
+                   month_f + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_four, maxit = 100)
+```
+
+```{r}
+year_alt_1_four <- glm(ClassCDO ~ Site + year_f + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_four, maxit = 1000)
+```
+
+#### Only a totally stripped down model returns reasonable Standard Errors
+```{r}
+year_alt_2_four <- glm(ClassCDO ~ year_f,
+              family = 'binomial',
+                   data = exceeds_four, maxit = 1000)
+```
+
+We could perhaps apply a seasonal model to each site seperately, but if we
+include both terms in this model, we end up with inflated variances.
+```{r}
+summary(year_alt_2_four)
+```
+
+### July and August Only
+Month by Month and Seasonal comparisons here are not relevant.
+```{r}
+exceeds_two <- exceeds %>%
+  filter(Month  > 6 & Month < 9)
+```
+
+
+```{r}
+exceeds_two %>%
+  filter( ! is.na(ClassCDO)) %>%
+ggplot(aes(sdate, MaxT)) +
+  geom_point()
+```
+
+
+```{r}
+year_alt_1_two <- glm(ClassCDO ~ Site + year_f + MaxT + FlowIndex,
+              family = 'binomial',
+                   data = exceeds_two, maxit = 1000)
+```
+
+#### Only a totally stripped down model returns reasonable SEs.
+```{r}
+year_alt_2_two <- glm(ClassCDO ~ year_f,
+              family = 'binomial',
+                   data = exceeds_two, maxit = 1000)
+```
+
+We could perhaps apply a seasonal model to each site separately, but if we
+include both terms in this model, we end up with inflated variances.
+```{r}
+summary(year_alt_1_two)
+```
+
+We could conduct more formal model selection here, but we know we want models
+with autocorrelated errors, and probably smooth term covariates, not linear 
+covariates, so we proceed.
+
+## Models with Autocorrelated Error
+We fit a generalized linear mixed model, with autocorrelated error. Our primary 
+interest, is in a GLM with an `covAR1()` correlation structure. We focus on only 
+the two summer months, as it is less likely to have convergence problems.
+
+### Fitting with glmmTMB
+According to the 'covstruct' vignette for `glmTMB`, we can fit models with 
+autocorrelation structure, but we need to replace the nominal time variable
+with a factor, to ensure missing values are properly addressed during fitting.
+(this may actually NOT be essential for dates, since they are integers under the
+hood, but it's best to follow the instructions....).
+
+Creating a factorized version of the dates is surprisingly tricky.
+```{r}
+first_date <- min(exceeds$sdate)
+last_date <- max(exceeds$sdate)
+
+exceeds <- exceeds %>%
+  mutate(sdate_f = factor(as.numeric(sdate), 
+                          levels = as.numeric(first_date):as.numeric(last_date),
+         labels = as.character(seq(from = first_date,
+                                       to = last_date,
+                                       by = 1))))
+
+
+# Even though the actual list of dates will be shorter, we can use the same
+# starting and ending dates, since we are interested in integer separations.
+exceeds_two <- exceeds_two %>%
+  mutate(sdate_f = factor(as.numeric(sdate), 
+                          levels = as.numeric(first_date):as.numeric(last_date),
+         labels = as.character(seq(from = first_date,
+                                       to = last_date,
+                                       by = 1))))
+```
+
+
+We fit the model using a call similar to the prior models, except that
+the model specification follows `lme4` syntax, and includes a (clear!) 
+specification of the `covAR1()` term in the model.  These models run fairly
+quickly (under a minute), but with larger data sets, most return a warning about
+model convergence problems. those are ameliorated by focusing only on the summer
+months.
+```{r}
+system.time(do_glmm_two<- glmmTMB(ClassCDO ~ Site + year_f +
+                                               MaxT + lPrecip + FlowIndex +
+                                     ar1(sdate_f + 0| Site),
+              family = 'binomial',
+              data = exceeds_two))
+```
+
+We also fit simpler models, because we still face serious estimation problems
+with more complex models.
+
+```{r}
+system.time(do_glmm_two_2<- glmmTMB(ClassCDO ~ Site + year_f +
+                                               MaxT + lPrecip +
+                                     ar1(sdate_f + 0| Site),
+              family = 'binomial',
+              data = exceeds_two))
+```
+
+```{r}
+system.time(do_glmm_two_3<- glmmTMB(ClassCDO ~ Site + year_f + MaxT +
+                                     ar1(sdate_f + 0| Site),
+              family = 'binomial',
+              data = exceeds_two))
+```
+
+
+```{r}
+system.time(do_glmm_two_4<- glmmTMB(ClassCDO ~ Site + year_f +
+                                     ar1(sdate_f + 0| Site),
+              family = 'binomial',
+              data = exceeds_two))
+```
+
+```{r}
+AIC(do_glmm_two, do_glmm_two_2, do_glmm_two_3, do_glmm_two_4)
+```
+So, from the perspective of AIC, each model does significantly worse than its 
+predecessor.  unfortunately, the model fits still produce relatively poor 
+parameter and model predictions.
+
+
+```{r}
+summary(do_glmm_two)
+```
+Probability of violating DO standards increases with temperature and rainfall, 
+but declines with stream flow.  The magnitude of the effects is difficult to 
+determine solely by looking at the parameter estimates, since units of
+measurement are different.
+
+
+```{r}
+summary(do_glmm_two_4)
+```
+Pulling the stream flow term changes parameters substantially, presumably
+because the stream flow term provided a significant offset.  Impact
+on predictions is likely to be smaller.
+
+
+#### Extract Marginal Means -- Failure
+```{r}
+emmeans(do_glmm_two, ~ year_f, cov.reduce = median,
+        type = 'response')
+emmeans(do_glmm_two_4, ~ year_f, cov.reduce = median,
+        type = 'response')
+```
+
+So we still have meaningless predictions by `emmeans()`.  We can check whether
+the models are providing meaningful predictions as follows:
+
+```{r}
+df <- tibble(Site = 'S05',
+             MaxT = 250,     # Temp in tenths of a degree C
+             lPrecip = 0,
+             FlowIndex = median(exceeds_two$FlowIndex, na.rm = TRUE),
+             Year = c(2011, 215),
+             year_f = c('2011', '2015'),
+             sdate_f = c('2011-07-15', '2015-07-15')
+             )
+```
+
+
+```{r}
+predict(do_glmm_two, newdata = df, se.fit= TRUE)
+predict(do_glmm_two_4, newdata = df, se.fit= TRUE)
+```
+So in 2011, under the first model we predict no violations of DO (unreasonable), 
+with a reasonable standard error, while in 2015, we predict a finite result, 
+which corresponds to p(passing DO standard ) of over 0.99, with a HUGE standard
+error.  
+
+The second (and all intermediate) version of the model is no better, with huge
+standard errors of prediction as well.
+
+### Fit a GAM with Autocorrelated Error
+Our first attempt at a GAMM still had convergence problems, but provided insight
+into model formulation.  We include it here in a naked code block for
+documentation purposes.
+
+This model took a long time to run...
+```
+do_gamm_two<- gamm(ClassCDO ~ Site + year_f +
+                                  s(MaxT) + s(lPrecip) + s(FlowIndex),
+                                  correlation = corCAR1(form = ~ sdate | Site),
+                                family = 'binomial',
+                                niterPQL = 50, verbosePQL = TRUE,
+                                data = exceeds_two)
+```
+The first time through that code, with the default iteration limit of 20, it 
+took 1683 seconds (just under 30 minutes) and did not converge.
+
+Running it again, with a higher iteration limit (50) took 4319 seconds
+(72 minutes), but did not lead to convergence either.  We probably need a
+simpler model.
+
+The results fit a linear term for Temperature, and nearly linear
+term for precipitation, while the term for stream flow was both close only 
+marginally significant.
+
+Separating some  terms into the linear portions of the model may allow faster
+convergence, although prior experience with difficulty achieving convergence 
+may suggest that we need to drop some predictors entirely.
+
+We proceed on those ideas, keeping the higher iteration limit as a precaution.
+
+We check, with a (slow to converge ~ 20 min) model that includes all predictors,
+but moves the  Temperature term out of the smoothing functions.  That fits
+a functionally identical model, but much more quickly ( < 20 minutes) but
+unfortunately still has convergence issues.
+
+```{r gamm_1, cache = TRUE}
+if (! file.exists("models/do_gamm_two.rds")) {
+  system.time(
+    do_gamm_two<- gamm(ClassCDO ~ Site + year_f + MaxT + 
+                         s(lPrecip) + s(FlowIndex),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two)
+)
+  saveRDS(do_gamm_two, file="models/do_gamm_two.rds")
+} else {
+  do_gamm_two <- readRDS("models/do_gamm_two.rds")
+}
+```
+
+A model that omits the flow index term converges rapidly (~ 5 min, 7 iterations)
+but is hard to reconcile with the GLMM just run, where that term was important. 
+
+```{r gamm_2, cache = TRUE}
+if (! file.exists("models/do_gamm_two_2.rds")) {
+  system.time(
+    do_gamm_two_2<- gamm(ClassCDO ~ Site + year_f + MaxT + 
+                         s(lPrecip),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two)
+)
+  saveRDS(do_gamm_two_2, file="models/do_gamm_two_2.rds")
+} else {
+  do_gamm_two_2 <- readRDS("models/do_gamm_two_2.rds")
+}
+```
+
+```{r}
+summary(do_gamm_two$gam)
+```
+Notice that some years are not estimable in this model, presumably because of 
+lack of independence with some of the other predictors.
+
+```{r}
+summary(do_gamm_two_2$gam)
+```
+
+`gam.check()` is only marginally useful for a binomial GAM, but we look anyway.
+```{r}
+gam.check(do_gamm_two_2$gam)
+```
+#### Extract Marginal Means
+```{r}
+the_call <-  quote(gamm(ClassCDO ~ Site + year_f + MaxT + 
+                         s(lPrecip) + s(FlowIndex),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two))
+
+do_gamm_two$gam$call <- the_call
+
+the_call <-  quote(gamm(ClassCDO ~ Site + year_f + MaxT + 
+                         s(lPrecip),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two))
+do_gamm_two_2$gam$call <- the_call
+```
+
+##### By Site
+```{r}
+my_ref_grid <- ref_grid(do_gamm_two,  cov.reduce = median) 
+(a <- emmeans(my_ref_grid, ~ Site, type = 'response'))
+
+my_ref_grid <- ref_grid(do_gamm_two_2,  cov.reduce = median) 
+(b <- emmeans(my_ref_grid, ~ Site, type = 'response'))
+```
+
+```{r}
+ggplot(NULL, aes(x = summary(a)$prob, y = summary(b)$prob)) +
+  geom_line() +
+  geom_text(aes(label = levels(exceeds$Site))) +
+  geom_abline(slope = 1, intercept = 0, lty = 3) +
+  xlab("Larger Model") +
+  ylab('Smaller Model') +
+  xlim(0,1) +
+  ylim(0,1)
+```
+
+###### Graphics
+```{r fig.width = 4, fig.height = 3}
+s <- summary(b) %>% 
+  mutate(fprob = 1-prob,
+         fUCL = 1 - lower.CL,
+         fLCL = 1 - upper.CL)
+
+ggplot(s, aes(Site, fprob)) +
+ 
+  geom_pointrange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('     Upstream        Maine Stem       Downstream') +
+  ggtitle('July And August Only') +
+  theme_cbep(base_size = 12) +
+  theme(axis.title.x = element_text(size = 10))
+```
+
+```{r fig.width = 4, fig.height = 3}}
+ggplot(s, aes(Site, fprob)) +
+  geom_col(fill = cbep_colors()[4]) + 
+  geom_linerange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('     Upstream        Maine Stem       Downstream') +
+  ggtitle('July And August Only') +
+  theme_cbep(base_size = 12) +
+  theme(axis.title.x = element_text(size = 10))
+```
+
+##### By Year
+```{r}
+my_ref_grid <- ref_grid(do_gamm_two,  cov.reduce = median) 
+(a <- emmeans(my_ref_grid, ~ year_f, type = 'response'))
+
+my_ref_grid <- ref_grid(do_gamm_two_2,  cov.reduce = median) 
+(b <- emmeans(my_ref_grid, ~ year_f, type = 'response'))
+
+```
+
+So, predicted marginal means values differ somewhat, but overall, results are
+similar.
+```{r}
+ggplot(NULL, aes(x = summary(a)$prob, y = summary(b)$prob[c(2,3,5,6,7,8, 9)])) +
+  geom_line() +
+  geom_text(aes(label = c(2011, 2012, 2014, 2015, 2016, 2017, 2018))) +
+  geom_abline(slope = 1, intercept = 0, lty = 3) +
+  xlab("Larger Model") +
+  ylab('Smaller Model') +
+  xlim(0,1) +
+  ylim(0,1)
+```
+
+We continue only with the smaller model, where all years provide estimable.
+
+###### Graphics
+```{r fig.width = 4, fig.height = 3}
+s <- summary(b)
+
+s %>% 
+  mutate(fprob = 1-prob,
+         fUCL = 1 - lower.CL,
+         fLCL = 1 - upper.CL) %>%
+ggplot(aes(as.numeric(year_f) + 2009, fprob)) +
+ 
+  geom_pointrange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  geom_line(color = cbep_colors()[3]) +
+  
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('') +
+  ggtitle('July And August Only') +
+  theme_cbep(base_size = 12)
+```
+
+
+```{r}
+
+  ggplot(s2,  aes(Year, p)) +
+  geom_point() +
+ 
+  # geom_linerange(aes(ymin = LCL, ymax = UCL),
+  #               color = cbep_colors()[1]) +
+  #geom_line(color = cbep_colors()[3]) +
+  geom_smooth(color = cbep_colors()[3],
+              method = 'lm',
+              formula = y~x,
+              se = FALSE) +
+  #geom_smooth(color = cbep_colors()[3]) +
+  ylab('Probability of Failing\nClass C DO Standard') +
+  xlab('') +
+  ggtitle('July Only') +
+  theme_cbep(base_size = 12) +
+  ylim(0,0.8)
+```
+
+# Percent Saturation
+## Plots
+These are estimated as empirical relative frequencies, with error estimated 
+as two times the standard error of the estimate. 
+```{r}
+exceeds %>%
+  group_by(Site, Year) %>%
+  summarize(psat_true = sum(ClassC_PctSat, na.rm = TRUE),
+            psat_count = sum(! is.na(ClassC_PctSat)),
+            psat_p = psat_true/psat_count,
+            psat_err = psat_p*(1-psat_p)/sqrt(psat_count),
+            .groups = 'drop') %>%
+  ggplot(aes(Year, psat_p, color = Site)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = psat_p-2 *psat_err, ymax = psat_p + 2 * psat_err)) +
+  ylab('Probability of Passing\nPercent Saturation Standard')
+```
+
+Note that for some year/ site combination, we never had a failure to meet 
+standards.  This limits models we can fit, as it did for DO.
+```{r}
+exceeds  %>%
+  group_by(month_f, Year) %>%
+  summarize(psat_true = sum(ClassC_PctSat, na.rm = TRUE),
+            psat_count = sum(! is.na(ClassC_PctSat)),
+            psat_p = psat_true/psat_count,
+            psat_err = psat_p*(1-psat_p)/sqrt(psat_count)) %>%
+  ggplot(aes(Year, psat_p, color = month_f)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = psat_p-2 * psat_err, ymax = psat_p + 2 * psat_err))
+```
+
+### GAM with Autocorrelated Error
+We follow the format of the DO model just developed. This model also takes ~ 15 
+minutes to fit and converges in 6 iterations.
+```{r gamm_2, cache = TRUE}
+if (! file.exists("models/psat_gamm_two_2.rds")) {
+  system.time(
+    psat_gamm_two_2<- gamm(ClassC_PctSat ~ Site + year_f + MaxT + 
+                         s(lPrecip),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two)
+)
+  saveRDS(psat_gamm_two_2, file="models/psat_gamm_two_2.rds")
+} else {
+  psat_gamm_two_2 <- readRDS("models/psat_gamm_two_2.rds")
+}
+```
+
+#### Extract Marginal Means
+```{r}
+the_call <-  quote(gamm(ClassC_PctSat ~ Site + year_f + MaxT + 
+                         s(lPrecip),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 50, verbosePQL = TRUE,
+                       data = exceeds_two))
+psat_gamm_two_2$gam$call <- the_call
+```
+
+##### By Site
+```{r}
+my_ref_grid <- ref_grid(psat_gamm_two_2,  cov.reduce = median) 
+(b <- emmeans(my_ref_grid, ~ Site, type = 'response'))
+```
+
+### Graphics
+```{r fig.width = 4, fig.height = 3}
+s <- summary(b) %>% 
+  mutate(fprob = 1-prob,
+         fUCL = 1 - lower.CL,
+         fLCL = 1 - upper.CL)
+
+ggplot(s, aes(Site, fprob)) +
+ 
+  geom_pointrange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  
+  ylab('Probability of Failing\nClass C\nPercent Saturation Standard') +
+  xlab('     Upstream        Maine Stem       Downstream') +
+  ggtitle('July And August Only') +
+  theme_cbep(base_size = 12) +
+  theme(axis.title.x = element_text(size = 10))
+```
+
+```{r}
+ggplot(s, aes(Site, fprob)) +
+  geom_col(fill = cbep_colors()[2]) + 
+  geom_linerange(aes(ymin = fLCL, ymax = fUCL),
+                color = cbep_colors()[1]) +
+  
+ ylab('Probability of Failing\nClass C\nPercent Saturation Standard') +
+  xlab('Upstream                  Maine Stem                Downstream ') +
+  ggtitle('July And August Only') +
+  theme_cbep(base_size = 12) +
+  theme(axis.title.x = element_text(size = 10))
+```
+
+##### By Year
+```{r}
+my_ref_grid <- ref_grid(psat_gamm_two_2,  cov.reduce = median) 
+(b <- emmeans(my_ref_grid, ~ year_f, type = 'response'))
+```
+
+
+# `rpart()` models
+```{r}
+
+```
+

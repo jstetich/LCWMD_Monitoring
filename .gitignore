@@ -29,6 +29,9 @@ README.html
 Derived_Data/DATA_NOTES.html
 Original_Data/DATA_SOURCES.html
 
+# We generally also don't wabt default HTML output of notebooks either.
+**/*.nb.html    
+
 # Folders used to hide content from GIT
 **/drafts/
 **/sources/

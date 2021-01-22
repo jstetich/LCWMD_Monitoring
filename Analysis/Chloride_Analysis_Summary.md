@@ -3,41 +3,43 @@ Summary of Analysis of LCWMD ‘Chloride’ Data
 Curtis C. Bohlen, Casco Bay Estuary Partnership.
 01/06/2021
 
-  - [Introduction](#introduction)
-  - [Import Libraries](#import-libraries)
-  - [Data Preparation](#data-preparation)
-      - [Initial Folder References](#initial-folder-references)
-      - [Load Weather Data](#load-weather-data)
-      - [Update Folder References](#update-folder-references)
-      - [Load Data on Sites and Impervious
+-   [Introduction](#introduction)
+-   [Import Libraries](#import-libraries)
+-   [Data Preparation](#data-preparation)
+    -   [Initial Folder References](#initial-folder-references)
+    -   [Load Weather Data](#load-weather-data)
+    -   [Update Folder References](#update-folder-references)
+    -   [Load Data on Sites and Impervious
         Cover](#load-data-on-sites-and-impervious-cover)
-      - [Load Main Data](#load-main-data)
-          - [Cleanup](#cleanup)
-      - [Data Correction](#data-correction)
-          - [Anomolous Depth Values](#anomolous-depth-values)
-          - [Single S06B Chloride Observation from
+    -   [Load Main Data](#load-main-data)
+        -   [Cleanup](#cleanup)
+    -   [Data Correction](#data-correction)
+        -   [Anomolous Depth Values](#anomolous-depth-values)
+        -   [Single S06B Chloride Observation from
             2017](#single-s06b-chloride-observation-from-2017)
-      - [Add Stream Flow Index](#add-stream-flow-index)
-      - [Create Working Data](#create-working-data)
-      - [Cleanup](#cleanup-1)
-  - [GAMM Analysis](#gamm-analysis)
-      - [Initial Model](#initial-model)
-      - [ANOVA](#anova)
-      - [Summary](#summary)
-      - [Structure of the GAM](#structure-of-the-gam)
-      - [Diagnostic Plots](#diagnostic-plots)
-      - [Checking Estimated Marginal
+        -   [Site S03, end of 2016](#site-s03-end-of-2016)
+    -   [Remove Partial Data from Winter
+        Months](#remove-partial-data-from-winter-months)
+    -   [Add Stream Flow Index](#add-stream-flow-index)
+    -   [Remove Site S06B, Trim Data](#remove-site-s06b-trim-data)
+    -   [Cleanup](#cleanup-1)
+-   [GAMM Analysis](#gamm-analysis)
+    -   [Initial Model](#initial-model)
+    -   [ANOVA](#anova)
+    -   [Summary](#summary)
+    -   [Structure of the GAM](#structure-of-the-gam)
+    -   [Diagnostic Plots](#diagnostic-plots)
+    -   [Checking Estimated Marginal
         Means](#checking-estimated-marginal-means)
-      - [Visualizing Trends](#visualizing-trends)
-  - [Model without the interactions.](#model-without-the-interactions.)
-      - [ANOVA](#anova-1)
-      - [Summary](#summary-1)
-      - [Structure of the GAM](#structure-of-the-gam-1)
-      - [Diagnostic Plots](#diagnostic-plots-1)
-  - [Model with Separate Years](#model-with-separate-years)
-      - [ANOVA](#anova-2)
-      - [Diagnostic Plots](#diagnostic-plots-2)
-  - [Compare AIC](#compare-aic)
+    -   [Visualizing Trends](#visualizing-trends)
+-   [Model without the interactions.](#model-without-the-interactions.)
+    -   [ANOVA](#anova-1)
+    -   [Summary](#summary-1)
+    -   [Structure of the GAM](#structure-of-the-gam-1)
+    -   [Diagnostic Plots](#diagnostic-plots-1)
+-   [Model with Separate Years](#model-with-separate-years)
+    -   [ANOVA](#anova-2)
+    -   [Diagnostic Plots](#diagnostic-plots-2)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -65,22 +67,22 @@ statistical significance or information criteria. We selected a slightly
 simpler model, largely as it makes explaining the model more direct.
 
 Our interest focuses on answering three questions:  
-1\. What is the effect of time of year (Month, or Day of Year) on
+1. What is the effect of time of year (Month, or Day of Year) on
 chlorides?  
-2\. Do chloride levels differ from site to site?  
-3\. Is there a long-term trend in chlorides? 3. Are there differences in
+2. Do chloride levels differ from site to site?  
+3. Is there a long-term trend in chlorides? 3. Are there differences in
 the magnitude of the trend from site to site?
 
 We use a Generalized Additive Model, with autocorrelated errors to
 explore these questions. The model has the following form:
 
-\[ 
-\begin{align}
-log(Chlorides) &= f(Covariates) + \\
-&\qquad \beta_{1,i} Site_i + 
-\beta_{2,j} Month_j + \beta_3 Year + \beta_{4,i} Site_i * Year + \epsilon
-\end{align}
-\]
+$$ 
+\\begin{align}
+log(Chlorides) &= f(Covariates) + \\\\
+&\\qquad \\beta\_{1,i} Site\_i + 
+\\beta\_{2,j} Month\_j + \\beta\_3 Year + \\beta\_{4,i} Site\_i \* Year + \\epsilon
+\\end{align}
+$$
 
 Where: \* covariates include three terms:  
 – Daily precipitation  
@@ -107,8 +109,8 @@ significance, p values are not much use anyway.
 ``` r
 library(tidyverse)
 #> -- Attaching packages --------------------------------------- tidyverse 1.3.0 --
-#> v ggplot2 3.3.2     v purrr   0.3.4
-#> v tibble  3.0.4     v dplyr   1.0.2
+#> v ggplot2 3.3.3     v purrr   0.3.4
+#> v tibble  3.0.5     v dplyr   1.0.3
 #> v tidyr   1.1.2     v stringr 1.4.0
 #> v readr   1.4.0     v forcats 0.5.0
 #> -- Conflicts ------------------------------------------ tidyverse_conflicts() --
@@ -325,6 +327,63 @@ full_data <- full_data %>%
                               NA_real_, Chl_Median))
 ```
 
+### Site S03, end of 2016
+
+We noted some extreme dissolved oxygen data at the end of 2016. Values
+were both extreme and highly variable.
+
+We decided we should remove chloride and oxygen observations after
+October 15th.
+
+``` r
+full_data <- full_data %>% 
+  mutate(Chl_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, Chl_Median),
+         DO_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, DO_Median),
+         PctSat_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, PctSat_Median))
+```
+
+## Remove Partial Data from Winter Months
+
+We have very limited data from several months. We have January data from
+only one year, and February data from only three, and December data from
+four, all older. Both March and November sample sizes vary.
+
+The limited winter data generates severely unbalanced samples, which may
+lead to estimation problems, especially in models with crossed or
+potentially crossed factors and predictors. More fundamentally, the
+potential bias introduced by showing data from those months from just a
+handful of years could give a misleading impression of seasonal
+patterns. We trim December, January and February data, but leave the
+other months.
+
+It is important to remember, even after trimming the data, that:  
+1. 2010 is a partial year,  
+2. The period of sampling in March may be biased due to spring melt
+timing.
+
+``` r
+xtabs(~ Yearf + Month, data = full_data)
+#>       Month
+#> Yearf  Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+#>   2010   0   0   0   0   0  78 103 106 120 124 120  35
+#>   2011   0  24 104 120 124 120 124 124 120 124 120 112
+#>   2012   0  45  93  90  93 116 124 114 120  39 108 124
+#>   2013   9   0  58 131 155 140 124 127 120 141 150  15
+#>   2014   0   0  62 108 155 150 155 155 150 155 120   0
+#>   2015   0   0  23 147 186 180 186 186 180 160  30   0
+#>   2016   0   0  25 173 186 180 186 186 180 186 168   0
+#>   2017   0  18 186 180 186 180 186 186 180 186 102   0
+#>   2018   0   0  34 180 186 180 186 186 180 186 126   0
+```
+
+``` r
+full_data <- full_data %>%
+  filter(Month %in% month.abb[3:11]  )
+```
+
 ## Add Stream Flow Index
 
 We worked through many models on a site by site basis in which we
@@ -350,12 +409,12 @@ full_data %>%
   select( -sdate) %>%
   cor(use = 'pairwise', method = 'pearson')
 #>            S07      S06B       S05       S17       S03       S01
-#> S07  1.0000000 0.5882527 0.7177120 0.7327432 0.4434108 0.5859663
+#> S07  1.0000000 0.5882527 0.7042711 0.7327432 0.4578906 0.5594067
 #> S06B 0.5882527 1.0000000 0.8043943 0.8778188 0.7152403 0.6310361
-#> S05  0.7177120 0.8043943 1.0000000 0.7906571 0.4250331 0.6668570
+#> S05  0.7042711 0.8043943 1.0000000 0.7906571 0.4526392 0.6506630
 #> S17  0.7327432 0.8778188 0.7906571 1.0000000 0.6666414 0.7290077
-#> S03  0.4434108 0.7152403 0.4250331 0.6666414 1.0000000 0.4441852
-#> S01  0.5859663 0.6310361 0.6668570 0.7290077 0.4441852 1.0000000
+#> S03  0.4578906 0.7152403 0.4526392 0.6666414 1.0000000 0.4499047
+#> S01  0.5594067 0.6310361 0.6506630 0.7290077 0.4499047 1.0000000
 ```
 
 We use the log of the daily median flow at S05 as a general
@@ -376,7 +435,7 @@ full_data <- full_data %>%
 Note that because the flow record at S05 has some gaps, any model using
 this predictor is likely to have a smaller sample size.
 
-## Create Working Data
+## Remove Site S06B, Trim Data
 
 Including Site = S06B in the GLS models causes an error, because models
 that includes a Site:Year interaction are rank deficient. We only have
@@ -387,12 +446,12 @@ gracefully, `gls()` does not.)
 xtabs(~ Site + Year, data = full_data)
 #>       Year
 #> Site   2010 2011 2012 2013 2014 2015 2016 2017 2018
-#>   S07   176  311  288  230  262  191  246  265  240
-#>   S06B    0    0    0  223  217  193  247  265  240
-#>   S05   126  283  182  190  217  231  248  265  241
-#>   S17     0    0    0    0    0  223  235  265  241
-#>   S03   192  311  298  256  262  223  246  265  241
-#>   S01   192  311  298  271  252  217  248  265  241
+#>   S07   167  275  242  225  262  191  246  262  240
+#>   S06B    0    0    0  220  217  193  247  262  240
+#>   S05   118  255  151  184  217  231  248  262  241
+#>   S17     0    0    0    0    0  223  235  262  241
+#>   S03   183  275  252  251  262  223  246  262  241
+#>   S01   183  275  252  266  252  217  248  262  241
 ```
 
 We proceed with analyses that omits Site S06B.
@@ -440,8 +499,8 @@ in our earlier base models, so we leave that out here as well.
 This model takes several minutes to run (more than 5, less than 15)
 
 ``` r
-if (! file.exists("models/the_gamm.rds")) {
-  the_gamm <- gamm(log(Chl_Median) ~ Site + 
+if (! file.exists("models/chl_gamm.rds")) {
+  chl_gamm <- gamm(log(Chl_Median) ~ Site + 
                      s(lPrecip) + 
                      s(wlPrecip) +
                      s(FlowIndex) +
@@ -452,16 +511,16 @@ if (! file.exists("models/the_gamm.rds")) {
                    na.action = na.omit, 
                    method = 'REML',
                    data = reduced_data)
-  saveRDS(the_gamm, file="models/the_gamm.rds")
+  saveRDS(chl_gamm, file="models/chl_gamm.rds")
 } else {
-  the_gamm <- readRDS("models/the_gamm.rds")
+  chl_gamm <- readRDS("models/chl_gamm.rds")
 }
 ```
 
 ## ANOVA
 
 ``` r
-anova(the_gamm$gam)
+anova(chl_gamm$gam)
 #> 
 #> Family: gaussian 
 #> Link function: identity 
@@ -472,22 +531,22 @@ anova(the_gamm$gam)
 #> 
 #> Parametric Terms:
 #>           df      F  p-value
-#> Site       4  2.162   0.0706
-#> Month      9 20.325  < 2e-16
-#> Year       1 49.773 1.91e-12
-#> Site:Year  4  2.148   0.0723
+#> Site       4  1.203    0.307
+#> Month      8 26.207  < 2e-16
+#> Year       1 43.270 5.16e-11
+#> Site:Year  4  1.195    0.311
 #> 
 #> Approximate significance of smooth terms:
 #>                edf Ref.df      F p-value
-#> s(lPrecip)   7.035  7.035  26.80  <2e-16
-#> s(wlPrecip)  4.142  4.142  57.59  <2e-16
-#> s(FlowIndex) 8.459  8.459 231.41  <2e-16
+#> s(lPrecip)   6.603  6.603  27.39  <2e-16
+#> s(wlPrecip)  3.910  3.910  63.02  <2e-16
+#> s(FlowIndex) 8.454  8.454 220.99  <2e-16
 ```
 
 ## Summary
 
 ``` r
-summary(the_gamm$gam)
+summary(chl_gamm$gam)
 #> 
 #> Family: gaussian 
 #> Link function: identity 
@@ -498,47 +557,46 @@ summary(the_gamm$gam)
 #> 
 #> Parametric coefficients:
 #>                Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept)  -274.07889   39.67904  -6.907 5.42e-12 ***
-#> SiteS05        66.50572   63.29515   1.051  0.29343    
-#> SiteS17       170.42246  120.32720   1.416  0.15673    
-#> SiteS03       141.72115   52.36986   2.706  0.00682 ** 
-#> SiteS01        92.93459   53.01566   1.753  0.07966 .  
-#> MonthApr       -0.10089    0.04981  -2.026  0.04285 *  
-#> MonthMay       -0.25274    0.05681  -4.449 8.77e-06 ***
-#> MonthJun       -0.43644    0.05938  -7.349 2.24e-13 ***
-#> MonthJul       -0.51555    0.06255  -8.242  < 2e-16 ***
-#> MonthAug       -0.63148    0.06251 -10.102  < 2e-16 ***
-#> MonthSep       -0.67389    0.06036 -11.164  < 2e-16 ***
-#> MonthOct       -0.62198    0.05703 -10.905  < 2e-16 ***
-#> MonthNov       -0.40560    0.05294  -7.662 2.10e-14 ***
-#> MonthDec       -0.27603    0.06888  -4.007 6.21e-05 ***
-#> Year            0.13892    0.01969   7.055 1.91e-12 ***
-#> SiteS05:Year   -0.03316    0.03141  -1.056  0.29118    
-#> SiteS17:Year   -0.08457    0.05967  -1.417  0.15643    
-#> SiteS03:Year   -0.07016    0.02599  -2.699  0.00697 ** 
-#> SiteS01:Year   -0.04583    0.02631  -1.742  0.08160 .  
+#> (Intercept)  -264.60333   41.12472  -6.434 1.34e-10 ***
+#> SiteS05        63.84279   64.88443   0.984   0.3252    
+#> SiteS17       157.00064  122.68716   1.280   0.2007    
+#> SiteS03       107.62435   54.61903   1.970   0.0488 *  
+#> SiteS01        71.75144   55.26272   1.298   0.1942    
+#> MonthApr       -0.11318    0.05011  -2.259   0.0239 *  
+#> MonthMay       -0.27409    0.05728  -4.785 1.75e-06 ***
+#> MonthJun       -0.45876    0.06001  -7.644 2.42e-14 ***
+#> MonthJul       -0.54769    0.06322  -8.664  < 2e-16 ***
+#> MonthAug       -0.66755    0.06301 -10.594  < 2e-16 ***
+#> MonthSep       -0.71907    0.06056 -11.874  < 2e-16 ***
+#> MonthOct       -0.67787    0.05647 -12.005  < 2e-16 ***
+#> MonthNov       -0.43644    0.05193  -8.404  < 2e-16 ***
+#> Year            0.13424    0.02041   6.578 5.16e-11 ***
+#> SiteS05:Year   -0.03184    0.03220  -0.989   0.3228    
+#> SiteS17:Year   -0.07792    0.06084  -1.281   0.2003    
+#> SiteS03:Year   -0.05324    0.02711  -1.964   0.0496 *  
+#> SiteS01:Year   -0.03533    0.02743  -1.288   0.1978    
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
 #> Approximate significance of smooth terms:
 #>                edf Ref.df      F p-value    
-#> s(lPrecip)   7.035  7.035  26.80  <2e-16 ***
-#> s(wlPrecip)  4.142  4.142  57.59  <2e-16 ***
-#> s(FlowIndex) 8.459  8.459 231.41  <2e-16 ***
+#> s(lPrecip)   6.603  6.603  27.39  <2e-16 ***
+#> s(wlPrecip)  3.910  3.910  63.02  <2e-16 ***
+#> s(FlowIndex) 8.454  8.454 220.99  <2e-16 ***
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> R-sq.(adj) =  0.464   
-#>   Scale est. = 0.24523   n = 6368
+#> R-sq.(adj) =  0.452   
+#>   Scale est. = 0.25206   n = 6160
 ```
 
 ## Structure of the GAM
 
 ``` r
-plot(the_gamm$gam)
+plot(chl_gamm$gam)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-17-1.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-17-2.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-17-3.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-18-1.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-18-2.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-18-3.png" style="display: block; margin: auto;" />
 Note that the function for recent weighted precipitation is nearly
 linear, while the effect of present-day precipitation is near zero for
 low to moderate rainfall, but drops quickly for rainfall over about 4 cm
@@ -563,10 +621,10 @@ this is probably sufficient, since our focus is not on statistical
 significance, but on estimation.
 
 ``` r
-gam.check(the_gamm$gam)
+gam.check(chl_gamm$gam)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-18-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
 
     #> 
     #> 'gamm' based fit - care required with interpretation.
@@ -575,9 +633,9 @@ gam.check(the_gamm$gam)
     #> indicate that k is too low, especially if edf is close to k'.
     #> 
     #>                k'  edf k-index p-value    
-    #> s(lPrecip)   9.00 7.03    0.97   0.045 *  
-    #> s(wlPrecip)  9.00 4.14    0.91  <2e-16 ***
-    #> s(FlowIndex) 9.00 8.46    0.88  <2e-16 ***
+    #> s(lPrecip)   9.00 6.60    0.97   0.015 *  
+    #> s(wlPrecip)  9.00 3.91    0.90  <2e-16 ***
+    #> s(FlowIndex) 9.00 8.45    0.88  <2e-16 ***
     #> ---
     #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
@@ -592,7 +650,7 @@ or something similar, but for our purposes, that is probably overkill.
 
 Reliably calling `emmeans()` for these large `gamm()` models appears to
 require creating a call object and associating it with the model (e.g.,
-as `the_gamm$gam$call`). (See the `emmeans` models vignette for more
+as `chl_gamm$gam$call`). (See the `emmeans` models vignette for more
 info, although not all strategies recommended there worked for us).
 
 We first create the call object, then associate it with the model, and
@@ -622,21 +680,20 @@ the_call <-  quote(gamm(log(Chl_Median) ~ Site +
                         na.action = na.omit, 
                         method = 'REML',
                         data = reduced_data))
-the_gamm$gam$call <- the_call
+chl_gamm$gam$call <- the_call
 
-my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median) 
+my_ref_grid <- ref_grid(chl_gamm, at = list(Year = 2014), cov.reduce = median) 
 (a <- emmeans(my_ref_grid, ~ Month, type = 'response'))
 #>  Month response    SE   df lower.CL upper.CL
-#>  Mar        384 25.15 6329      338      436
-#>  Apr        347 19.38 6329      311      387
-#>  May        298 15.30 6329      270      330
-#>  Jun        248 12.51 6329      225      274
-#>  Jul        229 11.67 6329      207      253
-#>  Aug        204 10.15 6329      185      225
-#>  Sep        196  9.55 6329      178      215
-#>  Oct        206 10.41 6329      187      227
-#>  Nov        256 13.63 6329      230      284
-#>  Dec        291 20.75 6329      253      335
+#>  Mar        399 26.60 6123      350      455
+#>  Apr        356 20.24 6123      319      398
+#>  May        303 15.87 6123      274      336
+#>  Jun        252 12.95 6123      228      279
+#>  Jul        231 11.95 6123      209      255
+#>  Aug        205 10.36 6123      185      226
+#>  Sep        194  9.66 6123      176      214
+#>  Oct        203 10.43 6123      183      224
+#>  Nov        258 14.01 6123      232      287
 #> 
 #> Results are averaged over the levels of: Site 
 #> Confidence level used: 0.95 
@@ -644,7 +701,6 @@ my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median)
 ```
 
 ``` r
-
 labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
 
 plot(a) + 
@@ -659,7 +715,7 @@ plot(a) +
 #> Warning: Removed 1 rows containing missing values (geom_vline).
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
 
 ``` r
 labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
@@ -667,11 +723,11 @@ labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Da
 (a <- emmeans(my_ref_grid, ~ Site, type = 'response'))
 #> NOTE: Results may be misleading due to involvement in interactions
 #>  Site response   SE   df lower.CL upper.CL
-#>  S07       218 12.1 6329      196      243
-#>  S05       166 11.1 6329      146      190
-#>  S17       239 40.2 6329      172      332
-#>  S03       333 16.6 6329      302      367
-#>  S01       408 21.0 6329      368      451
+#>  S07       221 12.8 6123      197      248
+#>  S05       168 11.4 6123      147      192
+#>  S17       237 40.6 6123      169      332
+#>  S03       327 17.3 6123      295      363
+#>  S01       403 21.8 6123      363      448
 #> 
 #> Results are averaged over the levels of: Month 
 #> Confidence level used: 0.95 
@@ -691,7 +747,7 @@ plot(a) +
 #> Warning: Removed 1 rows containing missing values (geom_vline).
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-22-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-23-1.png" style="display: block; margin: auto;" />
 
 ## Visualizing Trends
 
@@ -699,18 +755,27 @@ We extract results on the log scale, so we can calculate the linear
 predictor by hand, then back transform.
 
 ``` r
-my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014, Month = 'Jul'),
+my_ref_grid <- ref_grid(chl_gamm, at = list(Year = 2014, Month = 'Jul'),
                         cov.reduce = median)
 
-a <- summary(emmeans(my_ref_grid, 'Site'))
+(a <- summary(emmeans(my_ref_grid, 'Site')))
 #> NOTE: Results may be misleading due to involvement in interactions
-(b <- summary(emtrends(the_gamm, 'Site', 'Year')))
+#>  Site emmean     SE   df lower.CL upper.CL
+#>  S07    5.28 0.0648 6123     5.16     5.41
+#>  S05    5.01 0.0736 6123     4.86     5.15
+#>  S17    5.35 0.1735 6123     5.01     5.69
+#>  S03    5.68 0.0602 6123     5.56     5.79
+#>  S01    5.89 0.0617 6123     5.76     6.01
+#> 
+#> Results are given on the log (not the response) scale. 
+#> Confidence level used: 0.95
+(b <- summary(emtrends(chl_gamm, 'Site', 'Year')))
 #>  Site Year.trend     SE   df lower.CL upper.CL
-#>  S07      0.1389 0.0197 6329   0.1003    0.178
-#>  S05      0.1058 0.0224 6329   0.0618    0.150
-#>  S17      0.0543 0.0565 6329  -0.0563    0.165
-#>  S03      0.0688 0.0172 6329   0.0351    0.102
-#>  S01      0.0931 0.0177 6329   0.0584    0.128
+#>  S07      0.1342 0.0204 6123   0.0942    0.174
+#>  S05      0.1024 0.0229 6123   0.0576    0.147
+#>  S17      0.0563 0.0575 6123  -0.0564    0.169
+#>  S03      0.0810 0.0181 6123   0.0456    0.116
+#>  S01      0.0989 0.0185 6123   0.0626    0.135
 #> 
 #> Results are averaged over the levels of: Month 
 #> Confidence level used: 0.95
@@ -723,26 +788,22 @@ EXCEPT S17, where we have fewer years of data.
 plot(b)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-25-1.png" style="display: block; margin: auto;" />
 And those trends are NOT statistically different.
 
 ``` r
 lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
-#rm(a,b)
-```
+rm(a,b)
 
-``` r
-df <- tibble(Site = rep(levels(reduced_data$Site), each = 10), 
-              Year = rep(2010:2019, 5)) %>%
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
   mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
          iintercept = lookup$Intercept[match(Site, lookup$Site)],
          pred = exp((Year - 2014) * sslope + iintercept)) %>%
   select(-sslope, -iintercept)
-```
 
-``` r
 ggplot(df, aes(x = Year, y = pred, color = Site)) +
-         geom_step() +
+         geom_step(direction = 'mid') +
   ylab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
   xlab('') +
   ylim(0,600) +
@@ -752,7 +813,7 @@ ggplot(df, aes(x = Year, y = pred, color = Site)) +
   theme_cbep(base_size = 12)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-26-1.png" style="display: block; margin: auto;" />
 
 # Model without the interactions.
 
@@ -790,15 +851,15 @@ anova(revised_gamm$gam)
 #> 
 #> Parametric Terms:
 #>       df      F p-value
-#> Site   4  37.85  <2e-16
-#> Month  9  19.01  <2e-16
-#> Year   1 117.10  <2e-16
+#> Site   4  35.21  <2e-16
+#> Month  8  25.02  <2e-16
+#> Year   1 117.72  <2e-16
 #> 
 #> Approximate significance of smooth terms:
 #>                edf Ref.df      F p-value
-#> s(lPrecip)   7.049  7.049  26.90  <2e-16
-#> s(wlPrecip)  4.156  4.156  57.19  <2e-16
-#> s(FlowIndex) 8.468  8.468 233.01  <2e-16
+#> s(lPrecip)   6.610  6.610  27.49  <2e-16
+#> s(wlPrecip)  3.924  3.924  62.78  <2e-16
+#> s(FlowIndex) 8.460  8.460 222.24  <2e-16
 ```
 
 ## Summary
@@ -815,34 +876,33 @@ summary(revised_gamm$gam)
 #> 
 #> Parametric coefficients:
 #>               Estimate Std. Error t value Pr(>|t|)    
-#> (Intercept) -1.995e+02  1.898e+01 -10.508  < 2e-16 ***
-#> SiteS05     -3.155e-01  7.859e-02  -4.015 6.02e-05 ***
-#> SiteS17     -8.932e-02  9.121e-02  -0.979   0.3275    
-#> SiteS03      3.717e-01  7.483e-02   4.967 6.97e-07 ***
-#> SiteS01      5.784e-01  7.659e-02   7.553 4.86e-14 ***
-#> MonthApr    -1.003e-01  4.994e-02  -2.009   0.0446 *  
-#> MonthMay    -2.503e-01  5.707e-02  -4.386 1.18e-05 ***
-#> MonthJun    -4.322e-01  5.984e-02  -7.223 5.70e-13 ***
-#> MonthJul    -5.067e-01  6.313e-02  -8.027 1.18e-15 ***
-#> MonthAug    -6.186e-01  6.308e-02  -9.806  < 2e-16 ***
-#> MonthSep    -6.601e-01  6.090e-02 -10.840  < 2e-16 ***
-#> MonthOct    -6.144e-01  5.742e-02 -10.700  < 2e-16 ***
-#> MonthNov    -4.028e-01  5.315e-02  -7.579 4.00e-14 ***
-#> MonthDec    -2.713e-01  6.906e-02  -3.929 8.63e-05 ***
-#> Year         1.019e-01  9.416e-03  10.821  < 2e-16 ***
+#> (Intercept) -2.046e+02  1.941e+01 -10.541  < 2e-16 ***
+#> SiteS05     -3.206e-01  7.965e-02  -4.025 5.77e-05 ***
+#> SiteS17     -1.030e-01  9.226e-02  -1.117   0.2642    
+#> SiteS03      3.509e-01  7.711e-02   4.550 5.46e-06 ***
+#> SiteS01      5.619e-01  7.846e-02   7.162 8.88e-13 ***
+#> MonthApr    -1.124e-01  5.019e-02  -2.240   0.0252 *  
+#> MonthMay    -2.713e-01  5.746e-02  -4.721 2.40e-06 ***
+#> MonthJun    -4.550e-01  6.034e-02  -7.540 5.39e-14 ***
+#> MonthJul    -5.405e-01  6.364e-02  -8.493  < 2e-16 ***
+#> MonthAug    -6.572e-01  6.343e-02 -10.361  < 2e-16 ***
+#> MonthSep    -7.082e-01  6.093e-02 -11.623  < 2e-16 ***
+#> MonthOct    -6.720e-01  5.671e-02 -11.849  < 2e-16 ***
+#> MonthNov    -4.347e-01  5.204e-02  -8.353  < 2e-16 ***
+#> Year         1.045e-01  9.629e-03  10.850  < 2e-16 ***
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
 #> Approximate significance of smooth terms:
 #>                edf Ref.df      F p-value    
-#> s(lPrecip)   7.049  7.049  26.90  <2e-16 ***
-#> s(wlPrecip)  4.156  4.156  57.19  <2e-16 ***
-#> s(FlowIndex) 8.468  8.468 233.01  <2e-16 ***
+#> s(lPrecip)   6.610  6.610  27.49  <2e-16 ***
+#> s(wlPrecip)  3.924  3.924  62.78  <2e-16 ***
+#> s(FlowIndex) 8.460  8.460 222.24  <2e-16 ***
 #> ---
 #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 #> 
-#> R-sq.(adj) =  0.426   
-#>   Scale est. = 0.26072   n = 6368
+#> R-sq.(adj) =  0.422   
+#>   Scale est. = 0.26397   n = 6160
 ```
 
 ## Structure of the GAM
@@ -854,7 +914,7 @@ marginally not significant in this simplified model.
 plot(revised_gamm$gam)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-30-1.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-30-2.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-30-3.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-29-1.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-29-2.png" style="display: block; margin: auto;" /><img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-29-3.png" style="display: block; margin: auto;" />
 
 ## Diagnostic Plots
 
@@ -868,7 +928,7 @@ significance, but on estimation.
 gam.check(revised_gamm$gam)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-31-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-30-1.png" style="display: block; margin: auto;" />
 
     #> 
     #> 'gamm' based fit - care required with interpretation.
@@ -877,13 +937,13 @@ gam.check(revised_gamm$gam)
     #> indicate that k is too low, especially if edf is close to k'.
     #> 
     #>                k'  edf k-index p-value    
-    #> s(lPrecip)   9.00 7.05    0.99    0.32    
-    #> s(wlPrecip)  9.00 4.16    0.90  <2e-16 ***
-    #> s(FlowIndex) 9.00 8.47    0.87  <2e-16 ***
+    #> s(lPrecip)   9.00 6.61    0.99    0.32    
+    #> s(wlPrecip)  9.00 3.92    0.90  <2e-16 ***
+    #> s(FlowIndex) 9.00 8.46    0.88  <2e-16 ***
     #> ---
     #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-No appreciable changes in moidel adequacy.
+No appreciable changes in model adequacy.
 
 # Model with Separate Years
 
@@ -919,15 +979,15 @@ anova(years_gamm$gam)
 #> 
 #> Parametric Terms:
 #>        df     F p-value
-#> Site    4 39.28  <2e-16
-#> Month   9 13.59  <2e-16
-#> Year_f  8 30.23  <2e-16
+#> Site    4 38.35  <2e-16
+#> Month   8 17.77  <2e-16
+#> Year_f  8 25.58  <2e-16
 #> 
 #> Approximate significance of smooth terms:
 #>                edf Ref.df      F p-value
-#> s(lPrecip)   7.056  7.056  27.53  <2e-16
-#> s(wlPrecip)  4.085  4.085  59.41  <2e-16
-#> s(FlowIndex) 8.494  8.494 232.88  <2e-16
+#> s(lPrecip)   6.614  6.614  27.75  <2e-16
+#> s(wlPrecip)  3.865  3.865  63.65  <2e-16
+#> s(FlowIndex) 8.493  8.493 221.60  <2e-16
 ```
 
 ## Diagnostic Plots
@@ -942,7 +1002,7 @@ significance, but on estimation.
 gam.check(years_gamm$gam)
 ```
 
-<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-33-1.png" style="display: block; margin: auto;" />
+<img src="Chloride_Analysis_Summary_files/figure-gfm/unnamed-chunk-32-1.png" style="display: block; margin: auto;" />
 
     #> 
     #> 'gamm' based fit - care required with interpretation.
@@ -951,23 +1011,8 @@ gam.check(years_gamm$gam)
     #> indicate that k is too low, especially if edf is close to k'.
     #> 
     #>                k'  edf k-index p-value    
-    #> s(lPrecip)   9.00 7.06    0.99    0.18    
-    #> s(wlPrecip)  9.00 4.08    0.95  <2e-16 ***
-    #> s(FlowIndex) 9.00 8.49    0.91  <2e-16 ***
+    #> s(lPrecip)   9.00 6.61    1.01    0.86    
+    #> s(wlPrecip)  9.00 3.87    0.95  <2e-16 ***
+    #> s(FlowIndex) 9.00 8.49    0.89  <2e-16 ***
     #> ---
     #> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-
-# Compare AIC
-
-``` r
-AIC(revised_gamm$lme)
-#> [1] -253.4018
-AIC(the_gamm$lme)
-#> [1] -232.1566
-AIC(years_gamm$lme)
-#> [1] -339.9495
-```
-
-So the a model that fits multiple slopes is not justified, while a model
-that includes separate terms for each year fits substantially better. A
-linear fit for the year here is probably an oversimplification.

@@ -239,6 +239,47 @@ full_data <- full_data %>%
                               NA_real_, Chl_Median))
 ```
 
+### Site S03, end of 2016
+We noted some extreme dissolved oxygen data at the end of 2016.  Values were
+both extreme and highly variable.
+
+We decided we should remove chloride and oxygen observations after October 15th.
+
+```{r}
+full_data <- full_data %>% 
+  mutate(Chl_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, Chl_Median),
+         DO_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, DO_Median),
+         PctSat_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, PctSat_Median))
+```
+
+## Remove Partial Data from Winter Months
+We have very limited data from several months.  We have January data 
+from only one year, and February data from only three, and December data from 
+four, all older.  Both March and November sample sizes vary.
+
+The limited winter data generates severely unbalanced samples, which may lead to
+estimation problems, especially in models with crossed or potentially crossed
+factors and predictors.  More fundamentally, the potential bias introduced by
+showing data from those months from just a handful of years could give a
+misleading impression of seasonal patterns.  We trim December, January and
+February data, but leave the other months.
+
+It is important to remember,  even after trimming the data, that:  
+1.  2010 is a partial year,  
+2.  The period of sampling in March may be biased due to spring melt timing.
+
+```{r month_by_year_crosstab}
+xtabs(~ Yearf + Month, data = full_data)
+```
+
+```{r remove_limited_winter_data}
+full_data <- full_data %>%
+  filter(Month %in% month.abb[3:11]  )
+```
+
 ## Add Stream Flow Index
 We worked through many models on a site by site basis in which we included data
 on water depth, but since the depth coordinate is site-specific, a 10 cm depth
@@ -282,7 +323,7 @@ full_data <- full_data %>%
 Note that because the flow record at S05 has some gaps, any model using this
 predictor is likely to have a smaller sample size.
 
-## Create Working Data
+## Remove Site S06B, Trim Data
 Including Site = S06B in the GLS models causes an error, because models that
 includes a Site:Year interaction are rank deficient.  We only have one year's
 worth of data from that site.  (`lm()` handles that case
@@ -291,6 +332,7 @@ gracefully, `gls()` does not.)
 ```{r}
 xtabs(~ Site + Year, data = full_data)
 ```
+
 
 We proceed with analyses that omits Site S06B.
 ```{r}
@@ -332,8 +374,8 @@ so we leave that out here as well.
 
 This model takes several minutes to run (more than 5, less than 15)
 ```{r first_gamm, cache = TRUE}
-if (! file.exists("models/the_gamm.rds")) {
-  the_gamm <- gamm(log(Chl_Median) ~ Site + 
+if (! file.exists("models/chl_gamm.rds")) {
+  chl_gamm <- gamm(log(Chl_Median) ~ Site + 
                      s(lPrecip) + 
                      s(wlPrecip) +
                      s(FlowIndex) +
@@ -344,25 +386,25 @@ if (! file.exists("models/the_gamm.rds")) {
                    na.action = na.omit, 
                    method = 'REML',
                    data = reduced_data)
-  saveRDS(the_gamm, file="models/the_gamm.rds")
+  saveRDS(chl_gamm, file="models/chl_gamm.rds")
 } else {
-  the_gamm <- readRDS("models/the_gamm.rds")
+  chl_gamm <- readRDS("models/chl_gamm.rds")
 }
 ```
 
 ## ANOVA
 ```{r}
-anova(the_gamm$gam)
+anova(chl_gamm$gam)
 ```
 
 ## Summary
 ```{r}
-summary(the_gamm$gam)
+summary(chl_gamm$gam)
 ```
 
 ## Structure of the GAM
 ```{r}
-plot(the_gamm$gam)
+plot(chl_gamm$gam)
 ```
 Note that the function for recent weighted precipitation is nearly linear,
 while the effect of present-day precipitation is near zero for low to moderate
@@ -383,7 +425,7 @@ for GAMM models, since the function does not correctly incorporate the error
 correlations structure.  However, for our purposes, this is probably sufficient,
 since our focus is not on statistical significance, but on estimation.
 ```{r}
-gam.check(the_gamm$gam)
+gam.check(chl_gamm$gam)
 ```
 As with the linear model, we have a skewed, slightly heavy tailed distribution
 of residuals, with a couple of very large outliers. There is perhaps slight
@@ -395,7 +437,7 @@ that is probably overkill.
 ## Checking Estimated Marginal Means
 Reliably calling `emmeans()` for these large `gamm()` models appears to require 
 creating a call object and associating it with the model (e.g., as
-`the_gamm$gam$call`). (See the `emmeans` models vignette for more info, although
+`chl_gamm$gam$call`). (See the `emmeans` models vignette for more info, although
 not all strategies recommended there worked for us).
 
 We first create the call object, then associate it with the model, and finally
@@ -423,9 +465,9 @@ the_call <-  quote(gamm(log(Chl_Median) ~ Site +
                         na.action = na.omit, 
                         method = 'REML',
                         data = reduced_data))
-the_gamm$gam$call <- the_call
+chl_gamm$gam$call <- the_call
 
-my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median) 
+my_ref_grid <- ref_grid(chl_gamm, at = list(Year = 2014), cov.reduce = median) 
 (a <- emmeans(my_ref_grid, ~ Month, type = 'response'))
 ```
 
@@ -467,11 +509,11 @@ plot(a) +
 We extract results on the log scale, so we can calculate the linear 
 predictor by hand, then back transform.
 ```{r}
-my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014, Month = 'Jul'),
+my_ref_grid <- ref_grid(chl_gamm, at = list(Year = 2014, Month = 'Jul'),
                         cov.reduce = median)
 
-a <- summary(emmeans(my_ref_grid, 'Site'))
-(b <- summary(emtrends(the_gamm, 'Site', 'Year')))
+(a <- summary(emmeans(my_ref_grid, 'Site')))
+(b <- summary(emtrends(chl_gamm, 'Site', 'Year')))
 ```
 The key insight here is that the trends are significant for all sites EXCEPT
 S17, where we have fewer years of data.
@@ -485,7 +527,7 @@ And those trends are NOT statistically different.
 lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
 rm(a,b)
 
-df <- tibble(Site = rep(levels(reduced_data$Site), each = 10), 
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
               Year = rep(2010:2018, 5)) %>%
   mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
          iintercept = lookup$Intercept[match(Site, lookup$Site)],
@@ -552,7 +594,7 @@ since our focus is not on statistical significance, but on estimation.
 gam.check(revised_gamm$gam)
 ```
 
-No appreciable changes in moidel adequacy.
+No appreciable changes in model adequacy.
 
 # Model with Separate Years
 ```{r years_gamm, cache = TRUE}
@@ -586,14 +628,3 @@ since our focus is not on statistical significance, but on estimation.
 ```{r}
 gam.check(years_gamm$gam)
 ```
-
-# Compare AIC
-```{r}
-AIC(revised_gamm$lme)
-AIC(the_gamm$lme)
-AIC(years_gamm$lme)
-```
-So the a model that fits multiple slopes is not justified, while a model
-that includes separate terms for each year fits substantially better. A linear
-fit for the year here is probably an oversimplification.
-

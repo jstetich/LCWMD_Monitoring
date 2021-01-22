@@ -3,46 +3,46 @@ Classificatin Tree Models of ‘Diurnal Exceedences’ on Long Creek
 Curtis C. Bohlen, Casco Bay Estuary Partnership.
 01/12/2021
 
-  - [Introduction](#introduction)
-      - [Are Water Quality Criteria
+-   [Introduction](#introduction)
+    -   [Are Water Quality Criteria
         Met?](#are-water-quality-criteria-met)
-      - [Sources of Threshold Values](#sources-of-threshold-values)
-          - [Dissolved oxygen](#dissolved-oxygen)
-          - [Chloride](#chloride)
-          - [Temperature](#temperature)
-  - [Import Libraries](#import-libraries)
-  - [Data Preparation](#data-preparation)
-      - [Folder References](#folder-references)
-      - [Data on Sites and Impervious
+    -   [Sources of Threshold Values](#sources-of-threshold-values)
+        -   [Dissolved oxygen](#dissolved-oxygen)
+        -   [Chloride](#chloride)
+        -   [Temperature](#temperature)
+-   [Import Libraries](#import-libraries)
+-   [Data Preparation](#data-preparation)
+    -   [Folder References](#folder-references)
+    -   [Data on Sites and Impervious
         Cover](#data-on-sites-and-impervious-cover)
-      - [Main Data](#main-data)
-      - [Data Corrections](#data-corrections)
-          - [Anomolous Depth Values](#anomolous-depth-values)
-          - [Single S06B Chloride Observation from
+    -   [Main Data](#main-data)
+    -   [Data Corrections](#data-corrections)
+        -   [Anomolous Depth Values](#anomolous-depth-values)
+        -   [Single S06B Chloride Observation from
             2017](#single-s06b-chloride-observation-from-2017)
-      - [Add Stream Flow Index](#add-stream-flow-index)
-      - [A Caution](#a-caution)
-  - [How to Interpret Results?](#how-to-interpret-results)
-      - [Confirn meaning of “TRUE”](#confirn-meaning-of-true)
-      - [Demo: How `rpart()` Handles / Displays TRUE/FALSE
+    -   [Add Stream Flow Index](#add-stream-flow-index)
+    -   [A Caution](#a-caution)
+-   [How to Interpret Results?](#how-to-interpret-results)
+    -   [Confirm Meaning of “TRUE”](#confirm-meaning-of-true)
+    -   [Demo: How `rpart()` Handles / Displays TRUE/FALSE
         values?](#demo-how-rpart-handles-displays-truefalse-values)
-  - [Days that Pass DO Standards](#days-that-pass-do-standards)
-      - [Conclusions](#conclusions)
-      - [Frequency of Watershed Low
+-   [Days that Pass DO Standards](#days-that-pass-do-standards)
+    -   [Conclusions](#conclusions)
+    -   [Frequency of Watershed Low
         Flow](#frequency-of-watershed-low-flow)
-      - [Low Flow in the Upper
+    -   [Low Flow in the Upper
         Watershed](#low-flow-in-the-upper-watershed)
-  - [Complementary DO Model looking at local water
+-   [Complementary DO Model looking at local water
     depth](#complementary-do-model-looking-at-local-water-depth)
-  - [Days that Pass PctSat Standards](#days-that-pass-pctsat-standards)
-  - [Days that Pass Chloride
+-   [Days that Pass PctSat Standards](#days-that-pass-pctsat-standards)
+-   [Days that Pass Chloride
     Standards](#days-that-pass-chloride-standards)
-      - [CCC (Chronic Exposure)
+    -   [CCC (Chronic Exposure)
         Standard](#ccc-chronic-exposure-standard)
-      - [CMC (Acute Exposure) Standard](#cmc-acute-exposure-standard)
-  - [Days that Meet Temperature
+    -   [CMC (Acute Exposure) Standard](#cmc-acute-exposure-standard)
+-   [Days that Meet Temperature
     Thresholds](#days-that-meet-temperature-thresholds)
-      - [Acute Temperature Thresholds](#acute-temperature-thresholds)
+    -   [Acute Temperature Thresholds](#acute-temperature-thresholds)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -119,8 +119,8 @@ follows:
 
 The relevant thresholds are:
 
-  - Chloride CCC = 230 mg/l
-  - Chloride CMC = 860 mg/l
+-   Chloride CCC = 230 mg/l
+-   Chloride CMC = 860 mg/l
 
 In practice, chloride in Long Creek are indirectly estimated based on
 measurement of conductivity. The chloride-conductivity correlations is
@@ -158,8 +158,8 @@ library(rpart.plot)
 
 library(tidyverse)
 #> -- Attaching packages --------------------------------------- tidyverse 1.3.0 --
-#> v ggplot2 3.3.2     v purrr   0.3.4
-#> v tibble  3.0.4     v dplyr   1.0.2
+#> v ggplot2 3.3.3     v purrr   0.3.4
+#> v tibble  3.0.5     v dplyr   1.0.3
 #> v tidyr   1.1.2     v stringr 1.4.0
 #> v readr   1.4.0     v forcats 0.5.0
 #> -- Conflicts ------------------------------------------ tidyverse_conflicts() --
@@ -392,7 +392,7 @@ arise.
 
 # How to Interpret Results?
 
-## Confirn meaning of “TRUE”
+## Confirm Meaning of “TRUE”
 
 In this data set a “TRUE” value consistently implies that water quality
 criteria were met or exceeded, whether that is achieved by a value
@@ -434,13 +434,13 @@ rpart.plot(test_tree)
 
 <img src="rpart_models_files/figure-gfm/demo_tree-1.png" style="display: block; margin: auto;" />
 
-  - The tree correctly splits, showing \(Pr(TRUE)\) for `group == 'b'`
-    (to left) is smaller (at 0.24 ), while it is higher to the right for
-    `group == 'a'` (at 0.84).  
-  - The second split is random chance, but again the “Yes” value of the
-    split heads left (to LOWER \(Pr(TRUE)\)), while the “No” value pulls
-    right.  
-  - The percentages shown are percentages of the SAMPLE at each node,
+-   The tree correctly splits, showing *P**r*(*T**R**U**E*) for
+    `group == 'b'` (to left) is smaller (at 0.24 ), while it is higher
+    to the right for `group == 'a'` (at 0.84).  
+-   The second split is random chance, but again the “Yes” value of the
+    split heads left (to LOWER *P**r*(*T**R**U**E*)), while the “No”
+    value pulls right.  
+-   The percentages shown are percentages of the SAMPLE at each node,
     and sum to 100% for any complete partition of the sample.
 
 # Days that Pass DO Standards
@@ -499,7 +499,7 @@ rpart.plot(do_tree_prune)
 ```
 
 <img src="rpart_models_files/figure-gfm/plot_do_tree_1-1.png" style="display: block; margin: auto;" />
-Or, pruned more agressivley
+Or, pruned more aggressively
 
 ``` r
 do_tree_prune_2 <- prune(do_tree, 0.0165)
@@ -571,14 +571,14 @@ exceeds %>%
 
 <img src="rpart_models_files/figure-gfm/Blanchette_low_flow-1.png" style="display: block; margin: auto;" />
 
-  - Days of exceptionally low upper watershed flow are frequent in some
+-   Days of exceptionally low upper watershed flow are frequent in some
     years, especially.  
-  - Almost all days with exceptionally low watershed flow are also
+-   Almost all days with exceptionally low watershed flow are also
     exceptionally low flow days in the upper watershed.  
-  - The converse is not true. 2012, in particular, recorded low water
+-   The converse is not true. 2012, in particular, recorded low water
     depths in the upper watershed coincided with days with high flow
     further downstream.  
-  - Relationship between upper and lower watershed flow differs year to
+-   Relationship between upper and lower watershed flow differs year to
     year.
 
 Low flow conditions in Blanchette Brook were very common in some years.

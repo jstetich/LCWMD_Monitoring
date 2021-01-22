@@ -1,44 +1,47 @@
-Graphics for LCWMD ‘Chloride’ Data based on Conductivity Measurement
+Graphics for LCWMD ‘Chloride’ Data Based on Conductivity Measurement
 ================
 Curtis C. Bohlen, Casco Bay Estuary Partnership.
 01/06/2021
 
-  - [Introduction](#introduction)
-      - [Weather-Corrected Marginal
+-   [Introduction](#introduction)
+    -   [Weather-Corrected Marginal
         Means](#weather-corrected-marginal-means)
-  - [Import Libraries](#import-libraries)
-  - [Data Preparation](#data-preparation)
-      - [Initial Folder References](#initial-folder-references)
-      - [Load Weather Data](#load-weather-data)
-      - [Update Folder References](#update-folder-references)
-      - [Load Data on Sites and Impervious
+-   [Import Libraries](#import-libraries)
+-   [Data Preparation](#data-preparation)
+    -   [Initial Folder References](#initial-folder-references)
+    -   [Load Weather Data](#load-weather-data)
+    -   [Update Folder References](#update-folder-references)
+    -   [Load Data on Sites and Impervious
         Cover](#load-data-on-sites-and-impervious-cover)
-      - [Load Main Data](#load-main-data)
-          - [Cleanup](#cleanup)
-      - [Data Correction](#data-correction)
-          - [Anomolous Depth Values](#anomolous-depth-values)
-          - [Single S06B Chloride Observation from
+    -   [Load Main Data](#load-main-data)
+        -   [Cleanup](#cleanup)
+    -   [Data Correction](#data-correction)
+        -   [Anomolous Depth Values](#anomolous-depth-values)
+        -   [Single S06B Chloride Observation from
             2017](#single-s06b-chloride-observation-from-2017)
-      - [Add Stream Flow Index](#add-stream-flow-index)
-      - [Create Working Data](#create-working-data)
-          - [Cleanup](#cleanup-1)
-  - [GAMM Model](#gamm-model)
-      - [Visualizing Estimated Marginal
+        -   [Site S03, end of 2016](#site-s03-end-of-2016)
+    -   [Remove Partial Data from Winter
+        Months](#remove-partial-data-from-winter-months)
+    -   [Add Stream Flow Index](#add-stream-flow-index)
+    -   [Create Working Data](#create-working-data)
+        -   [Cleanup](#cleanup-1)
+-   [GAMM Model](#gamm-model)
+    -   [Visualizing Estimated Marginal
         Means](#visualizing-estimated-marginal-means)
-      - [By Month](#by-month)
-      - [By Site](#by-site)
-      - [Trends](#trends)
-  - [Graphic Alternatives](#graphic-alternatives)
-      - [By Site](#by-site-1)
-          - [Marginal Means and 95% CI](#marginal-means-and-95-ci)
-          - [Added Boxplots – Observed
+    -   [By Month](#by-month)
+    -   [By Site](#by-site)
+    -   [Trends](#trends)
+-   [Graphic Alternatives](#graphic-alternatives)
+    -   [By Site](#by-site-1)
+        -   [Marginal Means and 95% CI](#marginal-means-and-95-ci)
+        -   [Added Boxplots – Observed
             Medians](#added-boxplots-observed-medians)
-          - [By Imperviousness](#by-imperviousness)
-      - [By Month](#by-month-1)
-          - [Marginal Means and 95% CI](#marginal-means-and-95-ci-1)
-      - [Trends](#trends-1)
-          - [Violin Plot](#violin-plot)
-          - [Jitter Plot](#jitter-plot)
+        -   [By Imperviousness](#by-imperviousness)
+    -   [By Month](#by-month-1)
+        -   [Marginal Means and 95% CI](#marginal-means-and-95-ci-1)
+    -   [Trends](#trends-1)
+        -   [Violin Plot](#violin-plot)
+        -   [Jitter Plot](#jitter-plot)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -76,22 +79,23 @@ communication to State of Casco Bay audiences.
 
 We use a model of the form:
 
-\[ Chlorides = f(Covariates) + g(Predictors) + Error\]
+*C**h**l**o**r**i**d**e**s* = *f*(*C**o**v**a**r**i**a**t**e**s*) + *g*(*P**r**e**d**i**c**t**o**r**s*) + *E**r**r**o**r*
 
 Where: \* Site-independent precipitation, weighted recent precipitation,
-and flow covariates enter into the model via linear functions.
-Predictors include: – natural Log of total daily precipitation (in mm) –
-natural log of a weighted sum of the prior nine days precipitation (mm)
-– natural log of the depth of water (in meters) at Site S05, in
+and flow covariates enter into the model via linear functions or thin
+plate spline smoothers in a Generalized Addative Model. Predictors
+include: – natural Log of total daily precipitation (in mm) – natural
+log of a weighted sum of the prior nine days precipitation (mm) –
+natural log of the depth of water (in meters) at Site S05, in
 mid-watershed.
 
-  - The predictors enter the model via linear functions of:  
+-   The predictors enter the model via linear functions of:  
     – site,  
     – year,  
     – a site by year interaction, and  
     – time of year (Month in the model we consider year)
 
-  - The error includes both *i.i.d* normal error and an AR(1)
+-   The error includes both *i.i.d* normal error and an AR(1)
     autocorrelated error.
 
 But, because predictions are rather different from observed values
@@ -104,8 +108,8 @@ omit much of the detail from our graphics.
 ``` r
 library(tidyverse)
 #> -- Attaching packages --------------------------------------- tidyverse 1.3.0 --
-#> v ggplot2 3.3.2     v purrr   0.3.4
-#> v tibble  3.0.4     v dplyr   1.0.2
+#> v ggplot2 3.3.3     v purrr   0.3.4
+#> v tibble  3.0.5     v dplyr   1.0.3
 #> v tidyr   1.1.2     v stringr 1.4.0
 #> v readr   1.4.0     v forcats 0.5.0
 #> -- Conflicts ------------------------------------------ tidyverse_conflicts() --
@@ -249,7 +253,7 @@ full_data <- read_csv(fpath,
   mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
   mutate(Month = factor(Month, levels = month.abb)) %>%
   mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
-  mutate(Yearf = factor(Year)) %>%
+  mutate(Year_f = factor(Year)) %>%
 
 # We combine data using "match" because we have data for multiple sites and 
 # therefore dates are not unique.  `match()` correctly assigns weather
@@ -321,6 +325,63 @@ full_data <- full_data %>%
                               NA_real_, Chl_Median))
 ```
 
+### Site S03, end of 2016
+
+We noted some extreme dissolved oxygen data at the end of 2016. Values
+were both extreme and highly variable.
+
+We decided we should remove chloride and oxygen observations after
+October 15th.
+
+``` r
+full_data <- full_data %>% 
+  mutate(Chl_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, Chl_Median),
+         DO_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, DO_Median),
+         PctSat_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, PctSat_Median))
+```
+
+## Remove Partial Data from Winter Months
+
+We have very limited data from several months. We have January data from
+only one year, and February data from only three, and December data from
+four, all older. Both March and November sample sizes vary.
+
+The limited winter data generates severely unbalanced samples, which may
+lead to estimation problems, especially in models with crossed or
+potentially crossed factors and predictors. More fundamentally, the
+potential bias introduced by showing data from those months from just a
+handful of years could give a misleading impression of seasonal
+patterns. We trim December, January and February data, but leave the
+other months.
+
+It is important to remember, even after trimming the data, that:  
+1. 2010 is a partial year,  
+2. The period of sampling in March may be biased due to spring melt
+timing.
+
+``` r
+xtabs(~ Year_f + Month, data = full_data)
+#>       Month
+#> Year_f Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+#>   2010   0   0   0   0   0  78 103 106 120 124 120  35
+#>   2011   0  24 104 120 124 120 124 124 120 124 120 112
+#>   2012   0  45  93  90  93 116 124 114 120  39 108 124
+#>   2013   9   0  58 131 155 140 124 127 120 141 150  15
+#>   2014   0   0  62 108 155 150 155 155 150 155 120   0
+#>   2015   0   0  23 147 186 180 186 186 180 160  30   0
+#>   2016   0   0  25 173 186 180 186 186 180 186 168   0
+#>   2017   0  18 186 180 186 180 186 186 180 186 102   0
+#>   2018   0   0  34 180 186 180 186 186 180 186 126   0
+```
+
+``` r
+full_data <- full_data %>%
+  filter(Month %in% month.abb[3:11]  )
+```
+
 ## Add Stream Flow Index
 
 We worked through many models on a site by site basis in which we
@@ -346,12 +407,12 @@ full_data %>%
   select( -sdate) %>%
   cor(use = 'pairwise', method = 'pearson')
 #>            S07      S06B       S05       S17       S03       S01
-#> S07  1.0000000 0.5882527 0.7177120 0.7327432 0.4434108 0.5859663
+#> S07  1.0000000 0.5882527 0.7042711 0.7327432 0.4578906 0.5594067
 #> S06B 0.5882527 1.0000000 0.8043943 0.8778188 0.7152403 0.6310361
-#> S05  0.7177120 0.8043943 1.0000000 0.7906571 0.4250331 0.6668570
+#> S05  0.7042711 0.8043943 1.0000000 0.7906571 0.4526392 0.6506630
 #> S17  0.7327432 0.8778188 0.7906571 1.0000000 0.6666414 0.7290077
-#> S03  0.4434108 0.7152403 0.4250331 0.6666414 1.0000000 0.4441852
-#> S01  0.5859663 0.6310361 0.6668570 0.7290077 0.4441852 1.0000000
+#> S03  0.4578906 0.7152403 0.4526392 0.6666414 1.0000000 0.4499047
+#> S01  0.5594067 0.6310361 0.6506630 0.7290077 0.4499047 1.0000000
 ```
 
 We use the log of the daily median flow at S05 as a general
@@ -383,12 +444,12 @@ gracefully, `gls()` does not.)
 xtabs(~ Site + Year, data = full_data)
 #>       Year
 #> Site   2010 2011 2012 2013 2014 2015 2016 2017 2018
-#>   S07   176  311  288  230  262  191  246  265  240
-#>   S06B    0    0    0  223  217  193  247  265  240
-#>   S05   126  283  182  190  217  231  248  265  241
-#>   S17     0    0    0    0    0  223  235  265  241
-#>   S03   192  311  298  256  262  223  246  265  241
-#>   S01   192  311  298  271  252  217  248  265  241
+#>   S07   167  275  242  225  262  191  246  262  240
+#>   S06B    0    0    0  220  217  193  247  262  240
+#>   S05   118  255  151  184  217  231  248  262  241
+#>   S17     0    0    0    0    0  223  235  262  241
+#>   S03   183  275  252  251  262  223  246  262  241
+#>   S01   183  275  252  266  252  217  248  262  241
 ```
 
 We proceed with analyses that omits Site S06B.
@@ -423,9 +484,9 @@ covariates, but use them only to generate we are less concerned with
 model details.
 
 This model takes several minutes to run (more than 5, less than 15) We
-check for a saved versioin before recalculating. If you alter
-underlyinig data or model, you need to delete the saved version of the
-model to trigger recalculation.
+check for a saved version before recalculating. If you alter underlying
+data or model, you need to delete the saved version of the model to
+trigger recalculation.
 
 ``` r
 if (! file.exists("models/revised_gamm.rds")) {
@@ -469,11 +530,11 @@ We also explicitly specify that we want the marginal means estimated at
 Year = 2014. This is mostly to avoid possible confusion. The default
 creates a reference grid where marginal means are keyed to mean values
 of all predictors, here including the year. The average of all of our
-“year” predictors which would be some value close to and probabaly
-just slightly larger than 2014. However, we specified `cov.reduce =
-median`, so we would get the median Year, which is precisely 2014. So.,
-although this additional parameter is probably unnecessary, we chose to
-be explicit.
+“year” predictors which would be some value close to and probably just
+slightly larger than 2014. However, we specified `cov.reduce = median`,
+so we would get the median Year, which is precisely 2014. So., although
+this additional parameter is probably unnecessary, we chose to be
+explicit.
 
 ``` r
 the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
@@ -584,9 +645,9 @@ my_ref_grid <- ref_grid(revised_gamm,
                         cov.reduce = median, 
                         at = c(Year = 2014))
 (intcpt <- summary(emmeans(my_ref_grid, 'Year'))$emmean)
-#> [1] 5.532718
+#> [1] 5.529192
 (slp <- unname(coef(revised_gamm$gam)['Year']))
-#> [1] 0.1018957
+#> [1] 0.1044746
 ```
 
 ``` r
@@ -595,7 +656,7 @@ one_slope <- tibble(Year = 2010:2018,
 
 ggplot(one_slope, aes(x = Year, y = pred)) +
   geom_step(direction = 'mid') +     # puts slope breaks mid year
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab('') +
   ylim(0,600) +
   geom_hline(yintercept =  230, lty = 2) +
@@ -619,17 +680,17 @@ my_ref_grid <- ref_grid(revised_gamm,
 
 (a <- summary(emmeans(my_ref_grid, 'Site')))
 #>  Site emmean     SE   df lower.CL upper.CL
-#>  S07    5.42 0.0567 6333     5.31     5.53
-#>  S05    5.11 0.0621 6333     4.99     5.23
-#>  S17    5.33 0.0774 6333     5.18     5.49
-#>  S03    5.80 0.0523 6333     5.69     5.90
-#>  S01    6.00 0.0542 6333     5.90     6.11
+#>  S07    5.43 0.0579 6127     5.32     5.54
+#>  S05    5.11 0.0625 6127     4.99     5.23
+#>  S17    5.33 0.0782 6127     5.18     5.48
+#>  S03    5.78 0.0544 6127     5.68     5.89
+#>  S01    5.99 0.0556 6127     5.88     6.10
 #> 
 #> Results are averaged over the levels of: Month, Year 
 #> Results are given on the log (not the response) scale. 
 #> Confidence level used: 0.95
 (slp <- unname(coef(revised_gamm$gam)['Year']))
-#> [1] 0.1018957
+#> [1] 0.1044746
 ```
 
 ``` r
@@ -670,7 +731,7 @@ plt1 <- reduced_data %>%
   #scale_color_manual(values = cbep_colors()) +
   geom_violin(scale = 'count', fill = cbep_colors()[6]) +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab("Upstream      Main Stem                Lower Tribs        ") +
   #annotate('text', 2.25, 1400, label = labl, size = 3.5) +
   #xlim(0,500) +
@@ -694,7 +755,7 @@ plt1 +
                data = by_site, size  = 1.5, color = 'gray40') + 
 geom_point(aes(x = Site, y = response),  data = by_site,
              size  = 2) 
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/site_violin_emms-1.png" style="display: block; margin: auto;" />
@@ -712,10 +773,10 @@ plt1 +
   #stat_summary(fun = "median",
   #            geom ='point', shape = 18, size = 2)
 ggsave('figures/chl_Site_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/site_violins_boxes-1.png" style="display: block; margin: auto;" />
@@ -738,18 +799,17 @@ plt1 +
            hjust = 0, size = 3, label = 'median') +
   annotate('text', x= xanchor + 0.2, y = 1400,
            hjust = 0, size = 3, label = '75th percentile')
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/site_violins_boxes_annot-1.png" style="display: block; margin: auto;" />
 
 ``` r
-
 ggsave('figures/chl_Site_violin_w_bo_annot.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 ### By Imperviousness
@@ -768,12 +828,12 @@ knitr::kable(align = "lcc")
 ```
 
 | Site | Watershed Imperviousness (%) | Median Chloride (mg/l) |
-| :--- | :--------------------------: | :--------------------: |
-| S07  |             20.2             |         196.9          |
-| S05  |             16.6             |         162.0          |
+|:-----|:----------------------------:|:----------------------:|
+| S07  |             20.2             |         201.3          |
+| S05  |             16.6             |         162.2          |
 | S17  |             19.9             |         257.8          |
-| S03  |             41.2             |         314.0          |
-| S01  |             56.1             |         402.4          |
+| S03  |             41.2             |         311.2          |
+| S01  |             56.1             |         405.4          |
 
 #### Points Only
 
@@ -821,7 +881,6 @@ plt
 <img src="Chloride_Graphics_files/figure-gfm/site_chl_medians_by_IC-1.png" style="display: block; margin: auto;" />
 
 ``` r
-
 ggsave('figures/chl_b-_IC_points.pdf', device = cairo_pdf, width = 5, height = 4)
 ```
 
@@ -864,7 +923,7 @@ plt <- reduced_data %>%
   geom_text(aes(x = xloc, y = yloc, label = Site), 
             hjust = 0, size = 4, data = locs) +
   
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
   xlim(c(0,60)) +
 
@@ -892,23 +951,22 @@ annotate('text', x= 2, y = 1100, hjust = 0, size = 3, label = '25th percentile')
 annotate('text', x= 2, y = 1200, hjust = 0, size = 3, label = 'median') +
 annotate('text', x= 2, y = 1300, hjust = 0, size = 3, label = '75th percentile') +
 annotate('text', x= 2, y = 1400, hjust = 0, size = 3, label = 'maximum')
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/site_chl_ranges_by_IC-1.png" style="display: block; margin: auto;" />
 
 ``` r
-
 ggsave('figures/chl_b-_IC_ranges.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 ```
 
 ## By Month
@@ -919,19 +977,22 @@ plt2 <- reduced_data %>%
   ggplot(aes(x = Month, y = Chl_Median)) +
   geom_violin(fill = cbep_colors()[2], scale = 'count') +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab("") +
-  #annotate('text', 9, 1400, label = labl, size = 3.5) +
-  #xlim(0,500) +
+
   geom_hline(yintercept =  230, lty = 2) +
-  annotate('text', 1, 200, label = 'CCC', size = 3) + 
+  annotate('text', 0, 200,  hjust = 0, label = 'CCC', size = 3) + 
+  
+  geom_hline(yintercept =  860, lty = 2) +
+  annotate('text', 0, 830, hjust = 0, label = 'CMC', size = 3) + 
+  
   theme_cbep(base_size = 12)
 ```
 
 ### Marginal Means and 95% CI
 
 The emms here are reasonable, but there is little advantage to
-interposing a model between data and the readers here, and nedians tell
+interposing a model between data and the readers here, and medians tell
 a similar story.
 
 ``` r
@@ -942,7 +1003,7 @@ plt2 +
                data = by_month, size  = 1, color = 'gray10') +
     geom_point(aes(x = Month, y = response), data = by_month,
                size = 2, color = 'gray30')
-#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_month_emm-1.png" style="display: block; margin: auto;" />
@@ -956,16 +1017,16 @@ plt2 +
   #             geom ='point', shape = 18, size = 2.5)
 ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf,
        width = 5, height = 4)
-#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_months_box-1.png" style="display: block; margin: auto;" />
 
 ``` r
-xanchor = 8
+xanchor = 7
 
 plt2 +
   geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
@@ -982,8 +1043,8 @@ plt2 +
            hjust = 0, size = 3, label = 'median') +
   annotate('text', x= xanchor + 0.2, y = 1400,
            hjust = 0, size = 3, label = '75th percentile')
-#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_months_box_annot-1.png" style="display: block; margin: auto;" />
@@ -991,9 +1052,9 @@ plt2 +
 ``` r
 ggsave('figures/chl_month_violin_w_box_annot.pdf', device = cairo_pdf,
        width = 5, height = 4)
-#> Warning: Removed 1228 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 
-#> Warning: Removed 1228 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 ## Trends
@@ -1006,8 +1067,8 @@ labl <- 'Estimated Annual Mean Chlorides\nWeather Adjusted'
 plt3 <- reduced_data %>%
   ggplot(aes(x = Year, y = Chl_Median)) +
   geom_violin(aes(group = Year), scale = 'count', fill = cbep_colors()[4]) +
-
-  ylab('Chloride (mg/l)') +
+  xlab('') +
+  ylab('Daily Median Chloride (mg/l)') +
   #annotate('text', 2015, 1400, label = labl, size = 3.5) +
   #xlim(0,500) +
   
@@ -1033,7 +1094,7 @@ and thus are an inappropriate graphic on their own.
 plt3 +
 geom_point(aes(x = Year, y = pred),  data = one_slope,
              size  = 2) 
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_emm-1.png" style="display: block; margin: auto;" />
@@ -1047,10 +1108,10 @@ plt3 +
   #            geom ='point', shape = 18, size = 2.5)
 
 ggsave('figures/chl_year_violin_w_box.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_box-1.png" style="display: block; margin: auto;" />
@@ -1073,18 +1134,17 @@ plt3 +
             hjust = 0, size = 3, label = 'median') +
   annotate('text', x= xanchor + 0.3, y = 1600,
             hjust = 0, size = 3, label = '75th percentile')
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_box_annot-1.png" style="display: block; margin: auto;" />
 
 ``` r
-
 ggsave('figures/chl_year_violin_w_box_annot.pdf', device = cairo_pdf, width = 5, height = 4)
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
 
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 #### Add Regression Line Behind Violins
@@ -1115,8 +1175,8 @@ plt3.1$layers <- c(geom_line(aes(x = Year, y = pred),
                              data = one_slope, size = .75),
                    plt3.1$layers)
 plt3.1
-#> Warning: Removed 1270 rows containing non-finite values (stat_ydensity).
-#> Warning: Removed 1270 rows containing non-finite values (stat_boxplot).
+#> Warning: Removed 1168 rows containing non-finite values (stat_ydensity).
+#> Warning: Removed 1168 rows containing non-finite values (stat_boxplot).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_emtrend-1.png" style="display: block; margin: auto;" />
@@ -1136,7 +1196,7 @@ plt4 <- reduced_data %>%
               alpha = 0.4,
               width = .25) +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   
   scale_color_manual(values = cbep_colors()) +
   scale_fill_manual(values = cbep_colors()) +
@@ -1152,7 +1212,7 @@ plt4 <- reduced_data %>%
   theme_cbep(base_size = 12)
 
 plt4
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter-1.png" style="display: block; margin: auto;" />
@@ -1165,7 +1225,7 @@ Single regression line here is misleading.
 plt4 +
   geom_line(aes(x = Year, y = pred), 
               size = .75, data = one_slope)
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_emtrend-1.png" style="display: block; margin: auto;" />
@@ -1179,8 +1239,8 @@ plt4.1 <- plt4 +
                pch = 23, size = 3)
 
 plt4.1
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means-1.png" style="display: block; margin: auto;" />
@@ -1193,8 +1253,8 @@ plt4.2 <- plt4.1 +
 geom_line(aes(x = Year, y = pred), 
               size = .75, data = one_slope)
 plt4.2
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means_emtrend-1.png" style="display: block; margin: auto;" />
@@ -1208,11 +1268,11 @@ legend came from
 The key is writing a function to pass as the (undocumented?)
 “key\_glyph” parameter to the relevant geom, here \`geom\_lines().
 
-The otehr trick here is manually inserting a layer at the back of the
+The other trick here is manually inserting a layer at the back of the
 list of layers, rather than adding it to the front of the graphic.
 
-This graphic is not terrible, but the emtrend lines are still hard to
-understand, as they don’t clearly fit with the site means, largely
+This graphic is not terrible, but the `emtrend( )` lines are still hard
+to understand, as they don’t clearly fit with the site means, largely
 because we are showing “parallel” lines as the interaction terms were
 not significant.
 
@@ -1233,9 +1293,9 @@ plt4.3$layers <- c(geom_line(aes(x = Year, y = pred, color = Site),
 plt4.3 +
   # guides(color = guide_legend(override.aes = list(size = 2))) +
   theme(legend.key.width=unit(.4,"inches"))
-#> Warning: Removed 1270 rows containing non-finite values (stat_summary).
+#> Warning: Removed 1168 rows containing non-finite values (stat_summary).
 #> Warning: Removed 5 row(s) containing missing values (geom_path).
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 ```
 
 <img src="Chloride_Graphics_files/figure-gfm/chl_year_jitter_site_means_multi_emtrend-1.png" style="display: block; margin: auto;" />
@@ -1263,7 +1323,7 @@ plt4 +
 
   #guides(color = guide_legend(override.aes = list(size = 2))) +
   theme(legend.key.width=unit(.4,"inches"))
-#> Warning: Removed 1270 rows containing missing values (geom_point).
+#> Warning: Removed 1168 rows containing missing values (geom_point).
 #> Warning: Removed 5 row(s) containing missing values (geom_path).
 #> Warning: Removed 1 rows containing missing values (geom_point).
 ```

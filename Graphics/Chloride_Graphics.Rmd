@@ -1,5 +1,5 @@
 ---
-title: "Graphics for LCWMD 'Chloride' Data based on Conductivity Measurement"
+title: "Graphics for LCWMD 'Chloride' Data Based on Conductivity Measurement"
 author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
 date: "01/06/2021"
 output:
@@ -49,7 +49,8 @@ $$ Chlorides = f(Covariates) + g(Predictors) + Error$$
 
 Where:
 *  Site-independent precipitation, weighted recent precipitation, and flow 
-   covariates enter into the model via linear functions. Predictors include:
+   covariates enter into the model via linear functions or thin plate spline
+   smoothers in a Generalized Addative Model. Predictors include:
    -- natural Log of total daily precipitation (in mm)
    -- natural log of a weighted sum of the prior nine days precipitation (mm)
    -- natural log of the depth of water (in meters) at Site S05, in 
@@ -174,7 +175,7 @@ full_data <- read_csv(fpath,
   mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
   mutate(Month = factor(Month, levels = month.abb)) %>%
   mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
-  mutate(Yearf = factor(Year)) %>%
+  mutate(Year_f = factor(Year)) %>%
 
 # We combine data using "match" because we have data for multiple sites and 
 # therefore dates are not unique.  `match()` correctly assigns weather
@@ -232,6 +233,47 @@ We remove the Chloride value from the data.
 full_data <- full_data %>%
   mutate(Chl_Median = if_else(Site == 'S06B' & Year > 2014,
                               NA_real_, Chl_Median))
+```
+
+### Site S03, end of 2016
+We noted some extreme dissolved oxygen data at the end of 2016.  Values were
+both extreme and highly variable.
+
+We decided we should remove chloride and oxygen observations after October 15th.
+
+```{r}
+full_data <- full_data %>% 
+  mutate(Chl_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, Chl_Median),
+         DO_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, DO_Median),
+         PctSat_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, PctSat_Median))
+```
+
+## Remove Partial Data from Winter Months
+We have very limited data from several months.  We have January data 
+from only one year, and February data from only three, and December data from 
+four, all older.  Both March and November sample sizes vary.
+
+The limited winter data generates severely unbalanced samples, which may lead to
+estimation problems, especially in models with crossed or potentially crossed
+factors and predictors.  More fundamentally, the potential bias introduced by
+showing data from those months from just a handful of years could give a
+misleading impression of seasonal patterns.  We trim December, January and
+February data, but leave the other months.
+
+It is important to remember,  even after trimming the data, that:  
+1.  2010 is a partial year,  
+2.  The period of sampling in March may be biased due to spring melt timing.
+
+```{r month_by_year_crosstab}
+xtabs(~ Year_f + Month, data = full_data)
+```
+
+```{r remove_limited_winter_data}
+full_data <- full_data %>%
+  filter(Month %in% month.abb[3:11]  )
 ```
 
 ## Add Stream Flow Index
@@ -315,7 +357,7 @@ GAMMs.  As we do not interpret the covariates, but use them only to
 generate we are less concerned with model details. 
 
 This model takes several minutes to run (more than 5, less than 15)
-We check for a saved versioin before recalculating. If you alter underlyinig
+We check for a saved version before recalculating. If you alter underlying
 data or model, you need to delete the saved version of the model to trigger 
 recalculation.
 ```{r first_gamm, cache = TRUE}
@@ -359,7 +401,7 @@ We also explicitly specify that we want the marginal means estimated
 at Year = 2014.  This is mostly to avoid possible confusion.  The default 
 creates a reference grid where marginal means are keyed to mean values of all
 predictors, here including the year.  The average of all of our "year"
-predictors which would be some value close to and probabaly just slightly larger
+predictors which would be some value close to and probably just slightly larger
 than 2014. However, we specified `cov.reduce = median`, so we would get the
 median Year, which is precisely 2014.  So., although this additional parameter
 is probably unnecessary, we chose to be explicit.
@@ -476,7 +518,7 @@ one_slope <- tibble(Year = 2010:2018,
 
 ggplot(one_slope, aes(x = Year, y = pred)) +
   geom_step(direction = 'mid') +     # puts slope breaks mid year
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab('') +
   ylim(0,600) +
   geom_hline(yintercept =  230, lty = 2) +
@@ -534,7 +576,7 @@ plt1 <- reduced_data %>%
   #scale_color_manual(values = cbep_colors()) +
   geom_violin(scale = 'count', fill = cbep_colors()[6]) +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab("Upstream      Main Stem                Lower Tribs        ") +
   #annotate('text', 2.25, 1400, label = labl, size = 3.5) +
   #xlim(0,500) +
@@ -687,7 +729,7 @@ plt <- reduced_data %>%
   geom_text(aes(x = xloc, y = yloc, label = Site), 
             hjust = 0, size = 4, data = locs) +
   
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab('Watershed Imperviousness (%)') +
   xlim(c(0,60)) +
 
@@ -726,18 +768,21 @@ plt2 <- reduced_data %>%
   ggplot(aes(x = Month, y = Chl_Median)) +
   geom_violin(fill = cbep_colors()[2], scale = 'count') +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   xlab("") +
-  #annotate('text', 9, 1400, label = labl, size = 3.5) +
-  #xlim(0,500) +
+
   geom_hline(yintercept =  230, lty = 2) +
-  annotate('text', 1, 200, label = 'CCC', size = 3) + 
+  annotate('text', 0, 200,  hjust = 0, label = 'CCC', size = 3) + 
+  
+  geom_hline(yintercept =  860, lty = 2) +
+  annotate('text', 0, 830, hjust = 0, label = 'CMC', size = 3) + 
+  
   theme_cbep(base_size = 12)
 ```
 
 ### Marginal Means and 95% CI
 The emms here are reasonable, but there is little advantage to interposing a
-model between data and the readers here, and nedians tell a similar story.
+model between data and the readers here, and medians tell a similar story.
 ```{r chl_month_emm}
 plt2 + 
   # stat_summary(fun.data = "mean_se",
@@ -759,7 +804,7 @@ ggsave('figures/chl_month_violin_w_box.pdf', device = cairo_pdf,
 ```
 
 ```{r chl_months_box_annot}
-xanchor = 8
+xanchor = 7
 
 plt2 +
   geom_boxplot(width=0.15, coef = 0, outlier.shape = NA,
@@ -789,8 +834,8 @@ labl <- 'Estimated Annual Mean Chlorides\nWeather Adjusted'
 plt3 <- reduced_data %>%
   ggplot(aes(x = Year, y = Chl_Median)) +
   geom_violin(aes(group = Year), scale = 'count', fill = cbep_colors()[4]) +
-
-  ylab('Chloride (mg/l)') +
+  xlab('') +
+  ylab('Daily Median Chloride (mg/l)') +
   #annotate('text', 2015, 1400, label = labl, size = 3.5) +
   #xlim(0,500) +
   
@@ -888,7 +933,7 @@ plt4 <- reduced_data %>%
               alpha = 0.4,
               width = .25) +
 
-  ylab('Chloride (mg/l)') +
+  ylab('Daily Median Chloride (mg/l)') +
   
   scale_color_manual(values = cbep_colors()) +
   scale_fill_manual(values = cbep_colors()) +
@@ -941,10 +986,10 @@ from [here](https://stackoverflow.com/questions/61096323/how-can-i-change-the-co
 The key is writing a function to pass as  the (undocumented?) "key_glyph"
 parameter to the relevant geom, here `geom_lines().
 
-The otehr trick here is manually inserting a layer at the back of the list of
+The other trick here is manually inserting a layer at the back of the list of
 layers, rather than adding it to the front of the graphic.
 
-This graphic is not terrible, but the emtrend lines are still hard to
+This graphic is not terrible, but the `emtrend( )` lines are still hard to
 understand, as they don't clearly fit with the site means, largely because we
 are showing "parallel" lines as the interaction terms were not significant.
 

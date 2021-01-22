@@ -264,7 +264,7 @@ Site S06B only has chloride data from a single year, so including it in temporal
 models causes problems.  Consider removing the Site if problems arise.
 
 # How to Interpret Results?
-## Confirn meaning of "TRUE" 
+## Confirm Meaning of "TRUE" 
 In this data set a "TRUE" value consistently implies that water quality criteria
 were met or exceeded, whether that is achieved by a value higher than or lower
 than some numeric criteria.  "TRUE" implies good conditions.  "FALSE" implies 
@@ -333,7 +333,7 @@ If we prune the tree just slightly, it becomes more readily interpreted.
 do_tree_prune <- prune(do_tree, 0.0125)
 rpart.plot(do_tree_prune)
 ```
-Or, pruned more agressivley
+Or, pruned more aggressively
 ```{r plot_do_tree_2, fig.width = 4, fig.height = 3}
 do_tree_prune_2 <- prune(do_tree, 0.0165)
 rpart.plot(do_tree_prune_2)
