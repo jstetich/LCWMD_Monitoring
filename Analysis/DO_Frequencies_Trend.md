@@ -28,14 +28,15 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
         Only](#create-july-and-august-data-only)
 -   [GAMM Models with Autocorrelated
     Error](#gamm-models-with-autocorrelated-error)
-    -   [Model 1: Site by Year Interaction
-        Model](#model-1-site-by-year-interaction-model)
+    -   [Model 1: Site by Year Interaction With
+        Covariates](#model-1-site-by-year-interaction-with-covariates)
     -   [Model 2: Both Linear and Random Year Terms, No
         Interaction](#model-2-both-linear-and-random-year-terms-no-interaction)
     -   [Model 3: Both Linear and Random Terms Without
         Temperature](#model-3-both-linear-and-random-terms-without-temperature)
-        -   [Extract and Plot Marginal
-            Means](#extract-and-plot-marginal-means)
+    -   [Model 4: Site and Year, Alone](#model-4-site-and-year-alone)
+-   [Extract Marginal Means From Model
+    2](#extract-marginal-means-from-model-2)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -413,7 +414,7 @@ rm(exceeds)
 
 # GAMM Models with Autocorrelated Error
 
-## Model 1: Site by Year Interaction Model
+## Model 1: Site by Year Interaction With Covariates
 
 ``` r
     do_gamm_two_trend_1<- gamm(ClassCDO ~ Site * Year + MaxT + 
@@ -545,7 +546,46 @@ anova(do_gamm_two_trend_3$gam)
 
 Under this models, the Year linear trend is still significant.
 
-### Extract and Plot Marginal Means
+## Model 4: Site and Year, Alone
+
+The interaction between site and year is NOT significant (model not
+shown).
+
+``` r
+do_gamm_two_trend_4<- gamm(ClassCDO ~ Site + Year, 
+                           random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
+#> 
+#>  Maximum number of PQL iterations:  20
+#> iteration 1
+#> iteration 2
+#> iteration 3
+#> iteration 4
+#> iteration 5
+#> iteration 6
+```
+
+``` r
+anova(do_gamm_two_trend_4$gam, test = 'Chisq')
+#> Warning in anova.gam(do_gamm_two_trend_4$gam, test = "Chisq"): test argument
+#> ignored
+#> 
+#> Family: binomial 
+#> Link function: logit 
+#> 
+#> Formula:
+#> ClassCDO ~ Site + Year
+#> 
+#> Parametric Terms:
+#>      df      F  p-value
+#> Site  5 14.955 1.85e-14
+#> Year  1  6.622   0.0101
+```
+
+# Extract Marginal Means From Model 2
 
 ``` r
 the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT + 
@@ -606,7 +646,7 @@ oxygen, and (many of) the other sites.
 pwpp(my_ref_grid)
 ```
 
-<img src="DO_Frequencies_Trend_files/figure-gfm/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+<img src="DO_Frequencies_Trend_files/figure-gfm/unnamed-chunk-5-1.png" style="display: block; margin: auto;" />
 
 #### By Year
 

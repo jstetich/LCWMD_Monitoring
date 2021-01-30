@@ -278,7 +278,7 @@ rm(exceeds)
 ```
 
 # GAMM Models with Autocorrelated Error
-## Model 1:  Site by Year Interaction Model
+## Model 1:  Site by Year Interaction With Covariates
 ```{r do_gamm_trend_1, cache = TRUE}
     do_gamm_two_trend_1<- gamm(ClassCDO ~ Site * Year + MaxT + 
                          s(lPrecip), random = list(year_f = ~ 1),
@@ -293,7 +293,6 @@ anova(do_gamm_two_trend_1$gam)
 ```
 Note that in this model, neither the Year term nor the the Site by Year 
 interaction terms achieve statistical significance.
-
 
 ## Model 2:  Both Linear and Random Year Terms, No Interaction
 we add a random term for the years.  This is problematic, since we are also fitting year by
@@ -331,7 +330,23 @@ anova(do_gamm_two_trend_3$gam)
 
 Under this models, the Year linear trend is still significant.
 
-### Extract and Plot Marginal Means
+## Model 4:  Site and Year, Alone
+The interaction between site and year is NOT significant (model not shown).
+```{r do_gamm_trend_4, cache = TRUE}
+do_gamm_two_trend_4<- gamm(ClassCDO ~ Site + Year, 
+                           random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
+```
+
+
+```{r}
+anova(do_gamm_two_trend_4$gam, test = 'Chisq')
+```
+
+# Extract Marginal Means From Model 2
 ```{r do_construct_call}
 the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT + 
                         s(lPrecip),
