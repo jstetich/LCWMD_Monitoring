@@ -539,8 +539,8 @@ plot(by_month) +
   annotate('text', 5.25, 10.25, label = 'Class C' , size = 3, hjust = 1) + 
   annotate('text', 7.25, 10.25, label = 'Class B' , size = 3, hjust = 1) + 
   xlim(0,11) +
-  geom_vline(xintercept =  7, lty = 3, color = 'orange') +
-  geom_vline(xintercept =  5, lty = 3, color = 'red') +
+  geom_vline(xintercept =  7, lty = 2) +
+  geom_vline(xintercept =  5, lty = 2) +
   coord_flip() +
   theme_cbep(base_size = 12)
 ```
@@ -561,8 +561,8 @@ plot(by_site) +
   annotate('text', 5.25, 6.25, label = 'Class C' , size = 3, hjust = 1) + 
   annotate('text', 7.25, 6.25, label = 'Class B' , size = 3, hjust = 1) + 
   xlim(0,11) +
-  geom_vline(xintercept =  7, lty = 3, color = 'orange') +
-  geom_vline(xintercept =  5, lty = 3, color = 'red') +
+  geom_vline(xintercept =  7, lty = 2) +
+  geom_vline(xintercept =  5, lty = 2) +
   coord_flip() +
   theme_cbep(base_size = 12)
 ```
@@ -582,8 +582,8 @@ plot(by_year) +
   annotate('text', 5.25, 9.25, label = 'Class C' , size = 3, hjust = 1) + 
   annotate('text', 7.25, 9.25, label = 'Class B' , size = 3, hjust = 1) + 
   xlim(0,11) +
-  geom_vline(xintercept =  7, lty = 3, color = 'orange') +
-  geom_vline(xintercept =  5, lty = 3, color = 'red') +
+  geom_vline(xintercept =  7, lty = 2) +
+  geom_vline(xintercept =  5, lty = 2) +
   coord_flip() +
   theme_cbep(base_size = 12)
 ```
@@ -618,10 +618,10 @@ plt1 <- full_data %>%
   ylab('Daily Median Dissolved Oxygen (mg/l)') +
   xlab("          Upstream             Main Stem            Lower Tribs") +
 
-  geom_hline(yintercept =  7, lty = 3, color = 'orange') +
+  geom_hline(yintercept =  7, lty = 2) +
   annotate('text', 0, 7.5, label = 'Class B', size = 3, hjust = 0) + 
   
-  geom_hline(yintercept =  5, lty = 3, color = 'red') +
+  geom_hline(yintercept =  5, lty = 2) +
   annotate('text', 0, 5.5, label = 'Class C', size = 3, hjust = 0) + 
   
   theme_cbep(base_size = 12)
@@ -722,10 +722,10 @@ plt2 <- full_data %>%
 
   ylab('Daily Median Dissolved Oxygen (mg/l)') +
 
-  geom_hline(yintercept =  7, lty = 3, color = 'orange') +
+  geom_hline(yintercept =  7, lty = 2) +
   annotate('text', 0, 7.5, label = 'Class B', size = 3, hjust = 0) + 
   
-  geom_hline(yintercept =  5, lty = 3, color = 'red') +
+  geom_hline(yintercept =  5, lty = 2) +
   annotate('text', 0, 5.5, label = 'Class C', size = 3, hjust = 0) + 
   
   theme_cbep(base_size = 12)
@@ -802,10 +802,10 @@ plt3 <- full_data %>%
   scale_x_continuous(breaks= c(2010, 2012, 2014, 2016, 2018)) +
   
 
-  geom_hline(yintercept =  7, lty = 3, color = 'orange') +
+  geom_hline(yintercept =  7, lty = 2) +
   annotate('text', 2008.5, 7.5, label = 'Class B', size = 3, hjust = 0) + 
   
-  geom_hline(yintercept =  5, lty = 3, color = 'red') +
+  geom_hline(yintercept =  5, lty = 2) +
   annotate('text', 2008.5, 5.5, label = 'Class C', size = 3, hjust = 0) + 
   
   theme_cbep(base_size = 12)
