@@ -28,10 +28,12 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
         Only](#create-july-and-august-data-only)
 -   [GAMM Models with Autocorrelated
     Error](#gamm-models-with-autocorrelated-error)
-    -   [Model 1: Both Linear and Random
-        Terms](#model-1-both-linear-and-random-terms)
-    -   [Model 2: Both Linear and Random Terms Without
-        Temperature](#model-2-both-linear-and-random-terms-without-temperature)
+    -   [Model 1: Site by Year Interaction
+        Model](#model-1-site-by-year-interaction-model)
+    -   [Model 2: Both Linear and Random Year Terms, No
+        Interaction](#model-2-both-linear-and-random-year-terms-no-interaction)
+    -   [Model 3: Both Linear and Random Terms Without
+        Temperature](#model-3-both-linear-and-random-terms-without-temperature)
         -   [Extract and Plot Marginal
             Means](#extract-and-plot-marginal-means)
 
@@ -411,50 +413,75 @@ rm(exceeds)
 
 # GAMM Models with Autocorrelated Error
 
-## Model 1: Both Linear and Random Terms
+## Model 1: Site by Year Interaction Model
+
+``` r
+    do_gamm_two_trend_1<- gamm(ClassCDO ~ Site * Year + MaxT + 
+                         s(lPrecip), random = list(year_f = ~ 1),
+                       correlation = corCAR1(form = ~ sdate | Site),
+                       family = 'binomial',
+                       niterPQL = 20, verbosePQL = TRUE,
+                       data = exceeds_two)
+#> 
+#>  Maximum number of PQL iterations:  20
+#> iteration 1
+#> iteration 2
+#> iteration 3
+#> iteration 4
+#> iteration 5
+#> iteration 6
+#> iteration 7
+```
+
+``` r
+anova(do_gamm_two_trend_1$gam)
+#> 
+#> Family: binomial 
+#> Link function: logit 
+#> 
+#> Formula:
+#> ClassCDO ~ Site * Year + MaxT + s(lPrecip)
+#> 
+#> Parametric Terms:
+#>           df      F  p-value
+#> Site       5  0.778    0.565
+#> Year       1  2.238    0.135
+#> MaxT       1 24.517 7.93e-07
+#> Site:Year  5  0.777    0.566
+#> 
+#> Approximate significance of smooth terms:
+#>              edf Ref.df     F p-value
+#> s(lPrecip) 2.101  2.101 22.19  <2e-16
+```
+
+Note that in this model, neither the Year term nor the the Site by Year
+interaction terms achieve statistical significance.
+
+## Model 2: Both Linear and Random Year Terms, No Interaction
 
 we add a random term for the years. This is problematic, since we are
 also fitting year by year model coefficients, so any trend will be
 parceled out between the linear term and a residual
 
 ``` r
-if (! file.exists("models/do_gamm_two_trend.rds")) {
-  system.time(
-    do_gamm_two_trend<- gamm(ClassCDO ~ Site + Year + MaxT + 
-                         s(lPrecip), random = list(year_f = ~ 1),
-                       correlation = corCAR1(form = ~ sdate | Site),
-                       family = 'binomial',
-                       niterPQL = 20, verbosePQL = TRUE,
-                       data = exceeds_two)
-)
-  saveRDS(do_gamm_two_trend, file="models/do_gamm_two_trend.rds")
-} else {
-  do_gamm_two_trend <- readRDS("models/do_gamm_two_trend.rds")
-}
-```
-
-## Model 2: Both Linear and Random Terms Without Temperature
-
-Finally, we fit a model without the temperature term.
-
-``` r
-if (! file.exists("models/do_gamm_two_trend_2.rds")) {
-  system.time(
-    do_gamm_two_trend_2<- gamm(ClassCDO ~ Site +Year + 
-                         s(lPrecip) + s(year_f, bs = 're'),
-                       correlation = corCAR1(form = ~ sdate | Site),
-                       family = 'binomial',
-                       niterPQL = 20, verbosePQL = TRUE,
-                       data = exceeds_two)
-)
-  saveRDS(do_gamm_two_trend_2, file="models/do_gamm_two_trend_2.rds")
-} else {
-  do_gamm_two_trend_2 <- readRDS("models/do_gamm_two_trend_2.rds")
-}
+do_gamm_two_trend_2<- gamm(ClassCDO ~ Site + Year + MaxT + 
+                             s(lPrecip), random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
+#> 
+#>  Maximum number of PQL iterations:  20
+#> iteration 1
+#> iteration 2
+#> iteration 3
+#> iteration 4
+#> iteration 5
+#> iteration 6
 ```
 
 ``` r
-anova(do_gamm_two_trend$gam)
+anova(do_gamm_two_trend_2$gam)
 #> 
 #> Family: binomial 
 #> Link function: logit 
@@ -471,27 +498,52 @@ anova(do_gamm_two_trend$gam)
 #> Approximate significance of smooth terms:
 #>              edf Ref.df     F p-value
 #> s(lPrecip) 2.203  2.203 24.23  <2e-16
-anova(do_gamm_two_trend_2$gam)
+```
+
+Once we drop the interaction terms, the Year term emerges as
+statistically significant.
+
+## Model 3: Both Linear and Random Terms Without Temperature
+
+Finally, we fit a model without the temperature term.
+
+``` r
+do_gamm_two_trend_3<- gamm(ClassCDO ~ Site +Year + 
+                             s(lPrecip), random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
+#> 
+#>  Maximum number of PQL iterations:  20
+#> iteration 1
+#> iteration 2
+#> iteration 3
+#> iteration 4
+#> iteration 5
+#> iteration 6
+```
+
+``` r
+anova(do_gamm_two_trend_3$gam)
 #> 
 #> Family: binomial 
 #> Link function: logit 
 #> 
 #> Formula:
-#> ClassCDO ~ Site + Year + s(lPrecip) + s(year_f, bs = "re")
+#> ClassCDO ~ Site + Year + s(lPrecip)
 #> 
 #> Parametric Terms:
 #>      df      F  p-value
-#> Site  5 16.062 1.42e-15
-#> Year  1  6.962  0.00838
+#> Site  5 16.055 1.44e-15
+#> Year  1  6.682   0.0098
 #> 
 #> Approximate significance of smooth terms:
-#>              edf Ref.df      F p-value
-#> s(lPrecip) 2.255  2.255 15.609  <2e-16
-#> s(year_f)  6.096  7.000  8.224  <2e-16
+#>              edf Ref.df     F  p-value
+#> s(lPrecip) 2.219  2.219 15.16 3.31e-07
 ```
 
-Under those models, the Year linear trend is significant, whether we
-include a temperature covariate or not.
+Under this models, the Year linear trend is still significant.
 
 ### Extract and Plot Marginal Means
 
@@ -503,13 +555,13 @@ the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT +
                         family = 'binomial',
                         niterPQL = 20, verbosePQL = TRUE,
                         data = exceeds_two))
-do_gamm_two_trend$gam$call <- the_call
+do_gamm_two_trend_2$gam$call <- the_call
 ```
 
 #### By Site
 
 ``` r
-my_ref_grid <- ref_grid(do_gamm_two_trend,  cov.reduce = median) 
+my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Site, type = 'response'))
 #>  Site  prob     SE   df lower.CL upper.CL
 #>  S07  0.592 0.1213 2177    0.352    0.795
@@ -554,7 +606,7 @@ oxygen, and (many of) the other sites.
 pwpp(my_ref_grid)
 ```
 
-<img src="DO_Frequencies_Trend_files/figure-gfm/unnamed-chunk-2-1.png" style="display: block; margin: auto;" />
+<img src="DO_Frequencies_Trend_files/figure-gfm/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
 
 #### By Year
 
@@ -563,7 +615,7 @@ underlying GAM, it is not very informative without overlaying it over
 real data. But not the wide overlap of confidence intervals.
 
 ``` r
-my_ref_grid <- ref_grid(do_gamm_two_trend, cov.keep = 'Year', cov.reduce = median) 
+my_ref_grid <- ref_grid(do_gamm_two_trend_2, cov.keep = 'Year', cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Year, type = 'response'))
 #>  Year  prob     SE   df lower.CL upper.CL
 #>  2010 0.950 0.0338 2177    0.825    0.987
@@ -600,6 +652,6 @@ ggplot(s, aes(Year, prob)) +
 
 <img src="DO_Frequencies_Trend_files/figure-gfm/do_mm_graphic_by_years-1.png" style="display: block; margin: auto;" />
 
-Those confidence intervals reflect teh mathematics of the GLM. errors
+Those confidence intervals reflect the mathematics of the GLM. Errors
 are wider with $p $, and asymmetric near the limits *p* = 1.0 or
 *p* = 0.0.

@@ -277,54 +277,59 @@ exceeds_two <- exceeds %>%
 rm(exceeds)
 ```
 
-
-
 # GAMM Models with Autocorrelated Error
-## Model 1:  Both Linear and Random Terms
-we add a random term for the years.  This is problematic, since we are also fitting year by
-year model coefficients, so any trend will be parceled out between the linear
-term and a residual
-```{r do_gamm_trend, cache = TRUE}
-if (! file.exists("models/do_gamm_two_trend.rds")) {
-  system.time(
-    do_gamm_two_trend<- gamm(ClassCDO ~ Site + Year + MaxT + 
+## Model 1:  Site by Year Interaction Model
+```{r do_gamm_trend_1, cache = TRUE}
+    do_gamm_two_trend_1<- gamm(ClassCDO ~ Site * Year + MaxT + 
                          s(lPrecip), random = list(year_f = ~ 1),
                        correlation = corCAR1(form = ~ sdate | Site),
                        family = 'binomial',
                        niterPQL = 20, verbosePQL = TRUE,
                        data = exceeds_two)
-)
-  saveRDS(do_gamm_two_trend, file="models/do_gamm_two_trend.rds")
-} else {
-  do_gamm_two_trend <- readRDS("models/do_gamm_two_trend.rds")
-}
-```
-
-## Model 2:  Both Linear and Random Terms Without Temperature
-Finally, we fit a model without the temperature term.
-```{r do_gamm_trend_2, cache = TRUE}
-if (! file.exists("models/do_gamm_two_trend_2.rds")) {
-  system.time(
-    do_gamm_two_trend_2<- gamm(ClassCDO ~ Site +Year + 
-                         s(lPrecip) + s(year_f, bs = 're'),
-                       correlation = corCAR1(form = ~ sdate | Site),
-                       family = 'binomial',
-                       niterPQL = 20, verbosePQL = TRUE,
-                       data = exceeds_two)
-)
-  saveRDS(do_gamm_two_trend_2, file="models/do_gamm_two_trend_2.rds")
-} else {
-  do_gamm_two_trend_2 <- readRDS("models/do_gamm_two_trend_2.rds")
-}
 ```
 
 ```{r}
-anova(do_gamm_two_trend$gam)
-anova(do_gamm_two_trend_2$gam)
+anova(do_gamm_two_trend_1$gam)
+```
+Note that in this model, neither the Year term nor the the Site by Year 
+interaction terms achieve statistical significance.
+
+
+## Model 2:  Both Linear and Random Year Terms, No Interaction
+we add a random term for the years.  This is problematic, since we are also fitting year by
+year model coefficients, so any trend will be parceled out between the linear
+term and a residual
+```{r do_gamm_trend_2, cache = TRUE}
+do_gamm_two_trend_2<- gamm(ClassCDO ~ Site + Year + MaxT + 
+                             s(lPrecip), random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
 ```
 
-Under those models, the Year linear trend is significant, whether we include a
-temperature covariate or not.
+```{r}
+anova(do_gamm_two_trend_2$gam)
+```
+Once we drop the interaction terms, the Year term emerges as statistically 
+significant.
+
+## Model 3:  Both Linear and Random Terms Without Temperature
+Finally, we fit a model without the temperature term.
+```{r do_gamm_trend_3, cache = TRUE}
+do_gamm_two_trend_3<- gamm(ClassCDO ~ Site +Year + 
+                             s(lPrecip), random = list(year_f = ~ 1),
+                           correlation = corCAR1(form = ~ sdate | Site),
+                           family = 'binomial',
+                           niterPQL = 20, verbosePQL = TRUE,
+                           data = exceeds_two)
+```
+
+```{r}
+anova(do_gamm_two_trend_3$gam)
+```
+
+Under this models, the Year linear trend is still significant.
 
 ### Extract and Plot Marginal Means
 ```{r do_construct_call}
@@ -335,12 +340,12 @@ the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT +
                         family = 'binomial',
                         niterPQL = 20, verbosePQL = TRUE,
                         data = exceeds_two))
-do_gamm_two_trend$gam$call <- the_call
+do_gamm_two_trend_2$gam$call <- the_call
 ```
 
 #### By Site
 ```{r do_m2_mm_by_site}
-my_ref_grid <- ref_grid(do_gamm_two_trend,  cov.reduce = median) 
+my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Site, type = 'response'))
 ```
 
@@ -377,7 +382,7 @@ Since this prediction is capturing a simple linear term in the underlying GAM,
 it is not very informative without overlaying it over real data.  But not the
 wide overlap of confidence intervals.
 ```{r do_mm_by_years}
-my_ref_grid <- ref_grid(do_gamm_two_trend, cov.keep = 'Year', cov.reduce = median) 
+my_ref_grid <- ref_grid(do_gamm_two_trend_2, cov.keep = 'Year', cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Year, type = 'response'))
 
 ```
@@ -398,6 +403,5 @@ ggplot(s, aes(Year, prob)) +
   theme_cbep(base_size = 12)
 ```
 
-
-Those confidence intervals reflect teh mathematics of the GLM. errors are wider
+Those confidence intervals reflect the mathematics of the GLM. Errors are wider
 with  $p \approx  0.50 $, and asymmetric near the limits $p = 1.0$ or $p = 0.0$.
