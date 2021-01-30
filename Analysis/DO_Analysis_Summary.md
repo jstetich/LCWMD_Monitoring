@@ -55,6 +55,22 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
     -   [Calculate Observed Averages](#calculate-observed-averages)
     -   [By Site](#by-site-2)
     -   [By Year](#by-year-2)
+-   [Hierarchical Analysis of Trends](#hierarchical-analysis-of-trends)
+    -   [Model 1 : Site by Year
+        interaction](#model-1-site-by-year-interaction)
+        -   [ANOVA](#anova-2)
+        -   [Summary](#summary-2)
+        -   [Estimated Daily
+            Autocorrelation](#estimated-daily-autocorrelation-2)
+        -   [Structure of the Smoother](#structure-of-the-smoother-2)
+        -   [Examine Marginal Means](#examine-marginal-means)
+    -   [Model 2: No Interaction](#model-2-no-interaction)
+        -   [ANOVA](#anova-3)
+    -   [Summary](#summary-3)
+    -   [Estimated Daily
+        Autocorrelation](#estimated-daily-autocorrelation-3)
+        -   [Structure of the Smoother](#structure-of-the-smoother-3)
+        -   [Examine Marginal Means](#examine-marginal-means-1)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -760,7 +776,7 @@ if (! file.exists("models/do_gls.rds")) {
   do_gls <- readRDS("models/do_gls.rds")
 }
 #>    user  system elapsed 
-#> 1020.84    2.94 1024.24
+#> 1008.89    3.33 1012.75
 anova(do_gls)
 #> Denom. DF: 8318 
 #>             numDF  F-value p-value
@@ -919,8 +935,6 @@ if (! file.exists("models/do_gls_with.rds")) {
 } else {
   do_gls_with <- readRDS("models/do_gls_with.rds")
 }
-#>    user  system elapsed 
-#>  383.43    1.86  385.47
 anova(do_gls_with)
 #> Denom. DF: 6088 
 #>             numDF   F-value p-value
@@ -1652,9 +1666,9 @@ ggplot(aes(x = observed)) +
 Correspondence with observed means is only so-so, as is expected with
 uneven sampling histories. The main difference is in shifting position
 of S05 and S17. These sites have inconsistent sampling histories, so
-marginal means are adjusted by year. S17 was observed principally
-during“bad” years, so the marginal mean (which is averaged across for
-ALL years) as adjusted upwards, since the model concludes the observed
+marginal means are adjusted by year. S17 was observed principally during
+“bad” years, so the marginal mean (which is averaged across for ALL
+years) as adjusted upwards, since the model concludes the observed
 values would probably have been better. Meanwhile, site S05 is shifted
 down, for similar reasons.
 
@@ -1700,3 +1714,348 @@ correction for the lack of data from those cool months.
 Again, the smaller model consistently predicts the smaller marginal
 means. This probably reflects the impact of estimating marginal means by
 month, which is not a term in the smaller model.
+
+# Hierarchical Analysis of Trends
+
+We hierarchical GAMs that includes both autocorrelated errors and a
+random term by year. The concept is that year to year variation can be
+thought of as random based on annual weather, or perhaps watershed flow
+conditions. We test for a long term trend against that random term, to
+minimize the risk that we overinterpret year to year variability as a
+trend. But note that this model also includes terms for stream water
+temperature and flow.
+
+## Model 1 : Site by Year interaction
+
+We should be careful, as data is only available for selected years for
+three of our sites, including SO5, S06B and S17. This means we may be
+overfitting the trends fror some of those sites based on a limited
+number of years.
+
+We thought this would be a slow model to fit, so we save a version, but
+the model converges relatively rapidly.
+
+``` r
+if (! file.exists("models/do_gamm_trend_1.rds")) {
+  print(
+    system.time(
+      do_gamm_trend_1 <- gamm(DO_Median ~ Site * Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data)
+    )
+  )
+  saveRDS(do_gamm_trend_1, file="models/do_gamm_trend_1.rds")
+} else {
+  do_gamm_trend_1 <- readRDS("models/do_gamm_trend_1.rds")
+}
+```
+
+### ANOVA
+
+``` r
+anova(do_gamm_trend_1$gam)
+#> 
+#> Family: gaussian 
+#> Link function: identity 
+#> 
+#> Formula:
+#> DO_Median ~ Site * Year + T_Median + s(FlowIndex, k = 5) + Month
+#> 
+#> Parametric Terms:
+#>           df        F  p-value
+#> Site       5    1.937 0.084800
+#> Year       1    7.994 0.004707
+#> T_Median   1 2028.141  < 2e-16
+#> Month      8    3.756 0.000212
+#> Site:Year  5    1.942 0.084010
+#> 
+#> Approximate significance of smooth terms:
+#>                edf Ref.df     F p-value
+#> s(FlowIndex) 3.943  3.943 59.28  <2e-16
+```
+
+Here the Site by Year term is marginally statistically significant, with
+both the marginally significant Site and Site:Year interaction tied to
+S05.
+
+### Summary
+
+``` r
+summary(do_gamm_trend_1$gam)
+#> 
+#> Family: gaussian 
+#> Link function: identity 
+#> 
+#> Formula:
+#> DO_Median ~ Site * Year + T_Median + s(FlowIndex, k = 5) + Month
+#> 
+#> Parametric coefficients:
+#>                 Estimate Std. Error t value Pr(>|t|)    
+#> (Intercept)    5.021e+02  1.733e+02   2.898 0.003771 ** 
+#> SiteS06B       9.916e-01  2.949e+02   0.003 0.997317    
+#> SiteS05        8.748e+02  3.980e+02   2.198 0.028002 *  
+#> SiteS17       -3.945e+02  4.587e+02  -0.860 0.389770    
+#> SiteS03       -3.440e+01  1.695e+02  -0.203 0.839182    
+#> SiteS01       -2.415e+02  1.706e+02  -1.415 0.157058    
+#> Year          -2.432e-01  8.601e-02  -2.827 0.004707 ** 
+#> T_Median      -2.461e-01  5.464e-03 -45.035  < 2e-16 ***
+#> MonthApr      -3.428e-01  1.442e-01  -2.378 0.017457 *  
+#> MonthMay      -6.156e-01  1.740e-01  -3.538 0.000406 ***
+#> MonthJun      -8.250e-01  1.894e-01  -4.356 1.35e-05 ***
+#> MonthJul      -9.452e-01  2.036e-01  -4.642 3.52e-06 ***
+#> MonthAug      -9.825e-01  2.092e-01  -4.696 2.71e-06 ***
+#> MonthSep      -9.690e-01  2.131e-01  -4.547 5.54e-06 ***
+#> MonthOct      -1.098e+00  2.186e-01  -5.022 5.25e-07 ***
+#> MonthNov      -9.139e-01  2.347e-01  -3.893 0.000100 ***
+#> SiteS06B:Year -5.960e-04  1.463e-01  -0.004 0.996749    
+#> SiteS05:Year  -4.352e-01  1.978e-01  -2.200 0.027817 *  
+#> SiteS17:Year   1.959e-01  2.275e-01   0.861 0.389140    
+#> SiteS03:Year   1.740e-02  8.413e-02   0.207 0.836167    
+#> SiteS01:Year   1.201e-01  8.470e-02   1.418 0.156152    
+#> ---
+#> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+#> 
+#> Approximate significance of smooth terms:
+#>                edf Ref.df     F p-value    
+#> s(FlowIndex) 3.943  3.943 59.28  <2e-16 ***
+#> ---
+#> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+#> 
+#> R-sq.(adj) =  0.703   
+#>   Scale est. = 1.8831    n = 6113
+```
+
+### Estimated Daily Autocorrelation
+
+``` r
+summary(do_gamm_trend_1$lme)$modelStruct$corStruct
+#> Correlation structure of class corARMA representing
+#>      Phi1 
+#> 0.9077314
+```
+
+### Structure of the Smoother
+
+``` r
+plot(do_gamm_trend_1$gam)
+```
+
+<img src="DO_Analysis_Summary_files/figure-gfm/unnamed-chunk-52-1.png" style="display: block; margin: auto;" />
+
+### Examine Marginal Means
+
+We need to look at the marginally significant interaction, but we should
+be careful here, as data is only available for selected years for three
+of our sites, including SO5, S06B and S17.
+
+``` r
+the_call <-  quote(gamm(DO_Median ~ Site * Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data))
+do_gamm_trend_1$gam$call <- the_call
+
+#my_ref_grid <- ref_grid(do_gamm_trend_1, cov.keep = 'Year', cov.reduce = median) 
+#(by_year <- summary(emmeans(my_ref_grid, ~ Site + Year )))
+```
+
+``` r
+emmip(do_gamm_trend_1, Site ~ Year,
+      cov.keep = 'Year', cov.reduce = median,
+      type = 'response') +
+  ylab('Predicted DO Concentration')
+```
+
+<img src="DO_Analysis_Summary_files/figure-gfm/unnamed-chunk-54-1.png" style="display: block; margin: auto;" />
+
+That suggests that Site S05 has a low average dissolved oxygen, and a
+steep decline in DO over time. In fact, that is mostly an artifact of
+overfitting linear terms to a short record. S05 data is only available
+from early in the period of record, and had a moderate DO record.
+
+``` r
+full_data %>%
+  filter(Site == 'S05', ! is.na(DO_Median)) %>%
+  group_by(Year) %>%
+  summarize(n = n(),
+            do_mean = mean(DO_Median),
+            do_median = median(DO_Median))
+#> # A tibble: 4 x 4
+#>    Year     n do_mean do_median
+#> * <int> <int>   <dbl>     <dbl>
+#> 1  2010    66    8.95      7.82
+#> 2  2011    72    8.42      8.14
+#> 3  2013   122    9.64      9.28
+#> 4  2014   214    6.16      6.95
+```
+
+So we fit a slope to a four year record, where a linear model makes
+effectively no sense.
+
+We conclude that the full interaction model is problematic.
+
+## Model 2: No Interaction
+
+This model does slight violence to the prior analysis, but is arguably a
+better description of what we know from the available data. It avoids
+overfitting the short site by site records.
+
+``` r
+if (! file.exists("models/do_gamm_trend_2.rds")) {
+  print(
+    system.time(
+      do_gamm_trend_2 <- gamm(DO_Median ~ Site + Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data)
+    )
+  )
+  saveRDS(do_gamm_trend_2, file="models/do_gamm_trend_2.rds")
+} else {
+  do_gamm_trend_2 <- readRDS("models/do_gamm_trend_2.rds")
+}
+```
+
+### ANOVA
+
+``` r
+anova(do_gamm_trend_2$gam)
+#> 
+#> Family: gaussian 
+#> Link function: identity 
+#> 
+#> Formula:
+#> DO_Median ~ Site + Year + T_Median + s(FlowIndex, k = 5) + Month
+#> 
+#> Parametric Terms:
+#>          df        F  p-value
+#> Site      5    6.580 4.09e-06
+#> Year      1    8.663 0.003259
+#> T_Median  1 2018.918  < 2e-16
+#> Month     8    3.712 0.000244
+#> 
+#> Approximate significance of smooth terms:
+#>                edf Ref.df     F p-value
+#> s(FlowIndex) 3.943  3.943 58.84  <2e-16
+```
+
+Here the Year term AND the Site terms are statistically significant.
+
+## Summary
+
+``` r
+summary(do_gamm_trend_2$gam)
+#> 
+#> Family: gaussian 
+#> Link function: identity 
+#> 
+#> Formula:
+#> DO_Median ~ Site + Year + T_Median + s(FlowIndex, k = 5) + Month
+#> 
+#> Parametric coefficients:
+#>               Estimate Std. Error t value Pr(>|t|)    
+#> (Intercept) 452.238075 149.494358   3.025 0.002496 ** 
+#> SiteS06B     -0.240666   0.252630  -0.953 0.340811    
+#> SiteS05      -0.865079   0.352752  -2.452 0.014220 *  
+#> SiteS17       0.468813   0.272847   1.718 0.085807 .  
+#> SiteS03       0.658916   0.218745   3.012 0.002604 ** 
+#> SiteS01       0.512154   0.218970   2.339 0.019372 *  
+#> Year         -0.218453   0.074218  -2.943 0.003259 ** 
+#> T_Median     -0.245685   0.005468 -44.932  < 2e-16 ***
+#> MonthApr     -0.339425   0.144353  -2.351 0.018737 *  
+#> MonthMay     -0.608842   0.174337  -3.492 0.000482 ***
+#> MonthJun     -0.814891   0.189891  -4.291 1.80e-05 ***
+#> MonthJul     -0.935305   0.204250  -4.579 4.76e-06 ***
+#> MonthAug     -0.975410   0.209988  -4.645 3.47e-06 ***
+#> MonthSep     -0.966209   0.214081  -4.513 6.50e-06 ***
+#> MonthOct     -1.101842   0.219694  -5.015 5.44e-07 ***
+#> MonthNov     -0.915815   0.235955  -3.881 0.000105 ***
+#> ---
+#> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+#> 
+#> Approximate significance of smooth terms:
+#>                edf Ref.df     F p-value    
+#> s(FlowIndex) 3.943  3.943 58.84  <2e-16 ***
+#> ---
+#> Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+#> 
+#> R-sq.(adj) =   0.69   
+#>   Scale est. = 1.9092    n = 6113
+```
+
+## Estimated Daily Autocorrelation
+
+``` r
+summary(do_gamm_trend_2$lme)$modelStruct$corStruct
+#> Correlation structure of class corARMA representing
+#>      Phi1 
+#> 0.9090106
+```
+
+### Structure of the Smoother
+
+``` r
+plot(do_gamm_trend_2$gam)
+```
+
+<img src="DO_Analysis_Summary_files/figure-gfm/unnamed-chunk-59-1.png" style="display: block; margin: auto;" />
+
+### Examine Marginal Means
+
+We need to look at the marginally significant interaction, but we should
+be careful here, as data is only available for selected years for three
+of our sites, including SO5, S06B and S17.
+
+``` r
+the_call <-  quote(gamm(DO_Median ~ Site + Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data))
+do_gamm_trend_2$gam$call <- the_call
+
+my_ref_grid <- ref_grid(do_gamm_trend_2, cov.reduce = median, 
+                        at = list(Year = 2014)) 
+(by_site <- summary(emmeans(my_ref_grid, ~ Site  )))
+#>  Site emmean    SE   df lower.CL upper.CL
+#>  S07    8.02 0.234 6093     7.56     8.48
+#>  S06B   7.78 0.267 6093     7.25     8.30
+#>  S05    7.15 0.357 6093     6.45     7.85
+#>  S17    8.49 0.289 6093     7.92     9.05
+#>  S03    8.68 0.232 6093     8.22     9.13
+#>  S01    8.53 0.232 6093     8.08     8.98
+#> 
+#> Results are averaged over the levels of: Month 
+#> Confidence level used: 0.95
+```
+
+``` r
+plot(by_site) +
+  xlab('Predicted DO (mg/l)') +
+  coord_flip() 
+```
+
+<img src="DO_Analysis_Summary_files/figure-gfm/unnamed-chunk-61-1.png" style="display: block; margin: auto;" />
+
+Note that we STILL predict low DO for S05 in 2014, but the prediction is
+actually not far of the observed averages.

@@ -888,7 +888,7 @@ ggplot(aes(x = observed)) +
 Correspondence with observed means is only so-so, as is expected with uneven
 sampling histories. The main difference is in shifting position of S05 and S17.
 These sites have inconsistent sampling histories, so marginal means are adjusted 
-by year.  S17 was observed principally during"bad" years, so the marginal mean
+by year.  S17 was observed principally during "bad" years, so the marginal mean
 (which is averaged across for ALL years) as adjusted upwards, since the model
 concludes the observed values would probably have been better.  Meanwhile, site 
 S05 is shifted down, for similar reasons.
@@ -930,3 +930,188 @@ correction for the lack of data from those cool months.
 Again, the smaller model consistently predicts the smaller marginal means.  This
 probably reflects the impact of estimating marginal means by month, which is
 not a term in the smaller model.
+
+# Hierarchical Analysis of Trends
+
+We hierarchical GAMs that includes both autocorrelated errors and a random
+term by year.  The concept is that year to year variation can be thought of
+as random based on annual weather, or perhaps watershed flow conditions. We test
+for a long term trend against that random term, to minimize the risk that we
+overinterpret year to year variability as a trend.  But note that this model
+also includes terms for stream water temperature and flow.
+
+## Model 1 : Site by Year interaction
+We should be careful, as data is only available for selected years for three of
+our sites, including SO5, S06B and S17.  This means we may be overfitting the
+trends fror some of those sites based on a limited number of years.
+
+We thought this would be a  slow model to fit, so we save a version, but the
+model converges relatively rapidly.
+```{r trend_gamm_1, cache = TRUE}
+if (! file.exists("models/do_gamm_trend_1.rds")) {
+  print(
+    system.time(
+      do_gamm_trend_1 <- gamm(DO_Median ~ Site * Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data)
+    )
+  )
+  saveRDS(do_gamm_trend_1, file="models/do_gamm_trend_1.rds")
+} else {
+  do_gamm_trend_1 <- readRDS("models/do_gamm_trend_1.rds")
+}
+```
+
+### ANOVA
+```{r}
+anova(do_gamm_trend_1$gam)
+```
+
+Here the Site by Year term is marginally statistically significant, with both
+the marginally significant Site and Site:Year interaction tied to S05.
+
+### Summary
+```{r}
+summary(do_gamm_trend_1$gam)
+```
+
+### Estimated Daily Autocorrelation
+```{r}
+summary(do_gamm_trend_1$lme)$modelStruct$corStruct
+```
+
+### Structure of the Smoother
+```{r}
+plot(do_gamm_trend_1$gam)
+```
+
+
+### Examine Marginal Means
+We need to look at the marginally significant interaction, but we should be
+careful here, as data is only available for selected years for three of our
+sites, including SO5, S06B and S17.  
+```{r}
+the_call <-  quote(gamm(DO_Median ~ Site * Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data))
+do_gamm_trend_1$gam$call <- the_call
+
+#my_ref_grid <- ref_grid(do_gamm_trend_1, cov.keep = 'Year', cov.reduce = median) 
+#(by_year <- summary(emmeans(my_ref_grid, ~ Site + Year )))
+```
+
+```{r}
+emmip(do_gamm_trend_1, Site ~ Year,
+      cov.keep = 'Year', cov.reduce = median,
+      type = 'response') +
+  ylab('Predicted DO Concentration')
+```
+
+That suggests that Site S05 has a low average dissolved oxygen, and a steep
+decline in DO over time.  In fact, that is mostly an artifact of overfitting 
+linear terms to a short record.  S05 data is only available from early in the 
+period of record, and had a moderate DO record. 
+
+```{r}
+full_data %>%
+  filter(Site == 'S05', ! is.na(DO_Median)) %>%
+  group_by(Year) %>%
+  summarize(n = n(),
+            do_mean = mean(DO_Median),
+            do_median = median(DO_Median))
+```
+So we fit a slope to a four year record, where a linear model makes effectively
+no sense.
+
+We conclude that the full interaction model is problematic.
+
+## Model 2: No Interaction 
+This model does slight violence to the prior analysis, but is arguably a better
+description of what we know from the available data. It avoids overfitting the
+short site by site records.
+```{r trend_gamm_2, cache = TRUE}
+if (! file.exists("models/do_gamm_trend_2.rds")) {
+  print(
+    system.time(
+      do_gamm_trend_2 <- gamm(DO_Median ~ Site + Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data)
+    )
+  )
+  saveRDS(do_gamm_trend_2, file="models/do_gamm_trend_2.rds")
+} else {
+  do_gamm_trend_2 <- readRDS("models/do_gamm_trend_2.rds")
+}
+```
+
+### ANOVA
+```{r}
+anova(do_gamm_trend_2$gam)
+```
+Here the Year term AND the Site terms are statistically significant.
+
+## Summary
+```{r}
+summary(do_gamm_trend_2$gam)
+```
+
+## Estimated Daily Autocorrelation
+```{r}
+summary(do_gamm_trend_2$lme)$modelStruct$corStruct
+```
+
+### Structure of the Smoother
+```{r}
+plot(do_gamm_trend_2$gam)
+```
+
+### Examine Marginal Means
+We need to look at the marginally significant interaction, but we should be
+careful here, as data is only available for selected years for three of our
+sites, including SO5, S06B and S17.  
+```{r}
+the_call <-  quote(gamm(DO_Median ~ Site + Year +
+                        T_Median +
+                        s(FlowIndex, k = 5) +
+                        Month, 
+                       random = list(Year_f = ~ 1),
+                       correlation = corAR1(form = ~ as.numeric(sdate) | Site),
+                       na.action = na.omit, 
+                       method = 'REML',
+                       data = full_data))
+do_gamm_trend_2$gam$call <- the_call
+
+my_ref_grid <- ref_grid(do_gamm_trend_2, cov.reduce = median, 
+                        at = list(Year = 2014)) 
+(by_site <- summary(emmeans(my_ref_grid, ~ Site  )))
+```
+
+```{r}
+plot(by_site) +
+  xlab('Predicted DO (mg/l)') +
+  coord_flip() 
+```
+
+Note that we STILL predict low DO for S05 in 2014, but the prediction is
+actually not far of the observed averages.
+
+
+
