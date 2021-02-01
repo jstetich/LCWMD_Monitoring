@@ -37,6 +37,10 @@ Curtis C. Bohlen, Casco Bay Estuary Partnership.
     -   [Model 4: Site and Year, Alone](#model-4-site-and-year-alone)
 -   [Extract Marginal Means From Model
     2](#extract-marginal-means-from-model-2)
+    -   [By Site](#by-site)
+        -   [Graphics](#graphics)
+    -   [By Year](#by-year)
+        -   [Graphics](#graphics-1)
 
 <img
     src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
@@ -598,7 +602,7 @@ the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT +
 do_gamm_two_trend_2$gam$call <- the_call
 ```
 
-#### By Site
+## By Site
 
 ``` r
 my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median) 
@@ -618,7 +622,7 @@ my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median)
 Note that the confidence intervals don’t all overlap. Downstream sites
 have lower risk.
 
-##### Graphics
+### Graphics
 
 ``` r
 s <- summary(b)
@@ -648,11 +652,12 @@ pwpp(my_ref_grid)
 
 <img src="DO_Frequencies_Trend_files/figure-gfm/unnamed-chunk-5-1.png" style="display: block; margin: auto;" />
 
-#### By Year
+## By Year
 
 Since this prediction is capturing a simple linear term in the
 underlying GAM, it is not very informative without overlaying it over
-real data. But not the wide overlap of confidence intervals.
+real data. But note the wide overlap of confidence intervals. Although
+the trend is significant, predictions year to year overlap.
 
 ``` r
 my_ref_grid <- ref_grid(do_gamm_two_trend_2, cov.keep = 'Year', cov.reduce = median) 
@@ -673,7 +678,7 @@ my_ref_grid <- ref_grid(do_gamm_two_trend_2, cov.keep = 'Year', cov.reduce = med
 #> Intervals are back-transformed from the logit scale
 ```
 
-##### Graphics
+### Graphics
 
 ``` r
 s <- summary(b)

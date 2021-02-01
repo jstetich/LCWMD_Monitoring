@@ -358,7 +358,7 @@ the_call <-  quote(gamm(ClassCDO ~ Site + Year + MaxT +
 do_gamm_two_trend_2$gam$call <- the_call
 ```
 
-#### By Site
+## By Site
 ```{r do_m2_mm_by_site}
 my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Site, type = 'response'))
@@ -367,7 +367,7 @@ my_ref_grid <- ref_grid(do_gamm_two_trend_2,  cov.reduce = median)
 Note that the confidence intervals don't all overlap. Downstream sites have
 lower risk.
 
-##### Graphics
+### Graphics
 ```{r do_m2_mm_graphic_by_site, fig.width = 4, fig.height = 3}
 s <- summary(b)
 
@@ -391,18 +391,18 @@ sites.
 pwpp(my_ref_grid)
 ```
 
-
-#### By Year
+## By Year
 Since this prediction is capturing a simple linear term in the underlying GAM,
-it is not very informative without overlaying it over real data.  But not the
-wide overlap of confidence intervals.
+it is not very informative without overlaying it over real data.  But note the
+wide overlap of confidence intervals. Although the trend is significant,
+predictions year to year overlap.
 ```{r do_mm_by_years}
 my_ref_grid <- ref_grid(do_gamm_two_trend_2, cov.keep = 'Year', cov.reduce = median) 
 (b <- emmeans(my_ref_grid, ~ Year, type = 'response'))
 
 ```
 
-##### Graphics
+### Graphics
 ```{r do_mm_graphic_by_years, fig.width = 4, fig.height = 3}
 s <- summary(b)
 
