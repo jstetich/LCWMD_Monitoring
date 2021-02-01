@@ -1,0 +1,393 @@
+---
+title: "Graphics for Site by Site Differences in LCWMD 'Diurnal Exceedences' of Class C DO Standards"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "01/28/2021"
+output:
+  github_document:
+    toc: true
+    fig_width: 5
+    fig_height: 3
+---
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
+# Introduction
+The Long Creek Watershed, almost three and a half square miles in area, is
+dominated by commercial land use. The Maine Mall is one of the largest land
+owners in the watershed, and it is surrounded by a range of commercial
+businesses, from medical offices, to car washes.  About a third of the watershed
+in impervious surfaces like roads, parking lots, and rooftops.
+
+Landowners with an acre or more of impervious area are required to get a Clean
+Water Act permit for stormwater discharges from their property.  The LCWMD
+provides an alternative for landowners to working to receive an individual
+permit. Landowners who elect to participate in the The Long Creek Watershed
+Management District receive a General Permit, in return for providing funding to
+the District, and facilitating the work of the district by permitting access to
+their property for certain activities.
+
+For more information on LCWMD, see [their web site](restorelongcreek.org).
+
+# This Notebook
+This notebook produces graphics depicting the PROBABILITY of meeting or failing
+to meet Class C DO standards at each Long Creek Monitoring location.
+
+The core challenge is that we have a limited number of years of data, and data
+from some sites is only available for a limited period of years.
+
+We focus on the summer months of July and August, because seasonal variation in
+probability of meeting DO standards is very large, and low probability of
+failing DO standards at other times of yer interfere with efficient estimation.
+
+## Note
+In this data set a "TRUE" value consistently implies that water quality criteria
+were met or exceeded, whether that is achieved by a value higher than or lower
+than some numeric criteria.  "TRUE" implies good conditions.  "FALSE" implies 
+bad conditions.
+    
+## Sources of Threshold Values  
+### Dissolved oxygen
+Maine’s Class B water quality standards call for dissolved oxygen above 7 mg/l,
+with percent saturation above 75%. The Class C Standards, which apply to almost
+all of Long Creek, call for dissolved oxygen above 5 mg/l, with percent
+saturation above 60%. In addition, for class C conditions, the thirty day
+average dissolved oxygen must stay above 6.5 mg/l.
+
+# Import Libraries  
+```{r libraries}
+library(nlme)      # Supports glmmPQL()
+#library(MASS)      # for glmmPQL() function, which allows correlation in GLM
+
+#library(glmmTMB)   # An alternate -- possibly more robust -- fitting algorithm
+
+library(lme4)     # Contains glmer()
+library(mgcv)     # For mixed effects GAMM models -- probably not needed here yet.
+
+library(tidyverse)  # Has to load after MASS, so `select()` is not masked
+library(readr)
+
+library(emmeans)  # Provides tools for calculating marginal means
+
+library(CBEPgraphics)
+load_cbep_fonts()
+theme_set(theme_cbep())
+
+library(LCensMeans)
+```
+
+# Data Preparation
+## Folder References
+```{r folders}
+sibfldnm    <- 'Derived_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
+dir.create(file.path(getwd(), 'models'), showWarnings = FALSE)
+```
+
+## Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek
+Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
+Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
+November 13, 2019 File No. 09.0025977.02.
+
+Cumulative Area and IC calculations are our own, based on the GZA data and the
+geometry of the stream channel.
+
+```{r IC_data}
+# Read in data and drop the East Branch, where we have no data
+fn <- "Site_IC_Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
+```
+
+## Main Data
+We remove 2019 data, as we don't have a complete year's worth of data, which may
+bias annual summaries.
+
+Note that this data does NOT include all of the predictors used in some models
+looking at chlorides. In particular, it does not include stream flow estimates 
+```{r main_data}
+fn <- "Exceeds_Data.csv"
+exceeds = read_csv(file.path(sibling, fn), progress=FALSE) %>%
+  mutate(IC=Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)]) %>%
+  select(-X1) %>%
+  filter(Year < 2019) %>%
+  mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site)),
+         year_f = factor(Year),
+         month_f = factor(Month, levels = 1:12, labels = month.abb),
+         DOY = as.numeric(format(sdate, format = '%j')),
+         season = cut(Month, breaks = c(0,2,5,8,11,13),
+                      labels = c('Winter', 'Spring',
+                                 'Summer', 'Fall', 'Winter')),
+         season = factor(season, levels = c('Winter', 'Spring', 
+                                           'Summer', 'Fall'))) %>%
+  mutate(lPrecip = log1p(Precip))
+```
+
+## Data Corrections
+### Anomolous Depth Values
+Several depth observations in the record appear highly unlikely. In particular,
+several observations show daily median water depths over 15 meters. A few other
+observations show daily median depths over 4 meters, which also looks unlikely
+in a stream of this size.  All these events also occurred in May or June of 2015
+at site S05. Some sort of malfunction of the pressure transducer appears likely.
+
+We can trace these observations back to the raw QA/QC'd pressure and sonde data 
+submitted to LCWMD by GZA, so they are not an artifact of our data preparation.
+
+We remove these extreme values.  The other daily medians in May and June of 2015
+appear reasonable, and we leave them in place, although given possible 
+instability of the pressure sensors, it might make sense to remove them all.
+
+Note that removing depth observations from Site S05  will remove those DATES
+from any model that uses the `FlowIndex` variable (see below) as a predictor.
+```{r correct_depth_data}
+exceeds <- exceeds %>%
+  mutate(D_Median = if_else(D_Median > 4, NA_real_, D_Median),
+         lD_Median = log1p(D_Median))
+```
+
+### Single S06B Chloride Observation from 2017
+The data includes just a single chloride observation from site S06B from
+any year other than 2013.  While we do not know if the data point is legitimate
+or not, it has  high leverage in several models, and we suspect a 
+transcription error of some sort.
+
+We remove the Chloride value from the data.
+```{r correct_chloride_data}
+exceeds <- exceeds %>%
+  mutate(ChlCCC = if_else(Site == 'S06B' & Year > 2014,
+                              NA, ChlCCC),
+         ChlCMC = if_else(Site == 'S06B' & Year > 2014,
+                              NA, ChlCMC))
+```
+
+
+### Anomolous Dissolved Oxygen and Chloride Values
+#### Site S03, end of 2016
+We noted  extreme dissolved oxygen data at the end of 2016.  Values were
+both extreme and highly variable.  (See discussion in the DO Analysis workbooks).
+
+We decide we should remove chloride and oxygen observations after October 15th.
+
+```{r correct_S03_October_2016_data}
+exceeds <- exceeds %>% 
+  mutate(ChlCCC = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ChlCCC),
+         ChlCMC = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ChlCMC),
+         ClassCDO = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassCDO),
+         ClassBDO = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassBDO),
+         ClassC_PctSat = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassC_PctSat),
+         ClassB_PctSat = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassB_PctSat),
+         ClassCBoth = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassCBoth),
+         ClassBBoth = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA, ClassBBoth))
+```
+
+## Remove Partial Data from Winter Months
+We have very limited data from several months.  We have January data 
+from only one year, and February data from only two, and December data from only
+four years, all older.  Both March and November sample sizes vary.
+
+The limited winter data generates severely unbalanced samples, which may lead to estimation problems, especially in models with crossed or potentially crossed
+factors and predictors.  More fundamentally, the potential bias introduced by
+showing data from those months from just a handful of years could give a
+misleading impression of seasonal patterns.  We trim December, January and
+February data, but leave the other months. 
+
+It is important to remember,  even after trimming the data, that:  
+1.  2010 is a partial year,  
+2.  The period of sampling in March may be biased due to spring melt timing.
+
+```{r month_by_year_crosstab}
+xtabs(~ year_f + month_f, data = exceeds)
+```
+
+```{r remove_limited_winter_data}
+exceeds <- exceeds %>%
+  filter(Month >= 3 & Month <= 11)
+```
+
+## Add Stream Flow Index
+We worked through many models on a site by site basis in which we included data
+on water depth, but since the depth coordinate is site-specific, a 10 cm depth
+at one site may be exceptional, while at another it is commonplace. We generally
+want not a local measure of stream depth, but a watershed-wide metric of high,
+medium, or low stream flow.
+
+Middle and Lower Main Stem sites would be suitable for a general flow indicator
+across the watershed. The monitoring sites in that stretch of Long Creek include
+include S05 and S17, however only site S05 has been in continuous operation
+throughout the period of record, so we use depth data from S05 to construct
+our general stream flow indicator.
+
+Stream flow at S05 is correlated with flow at other sites, although not all that
+closely correlated to flow in the downstream tributaries (S01 and S03).
+```{r depth_correlations}
+exceeds %>%
+  select(sdate, Site, lD_Median) %>%
+  pivot_wider(names_from = Site, values_from = lD_Median) %>%
+  select( -sdate) %>%
+  cor(use = 'pairwise', method = 'pearson')
+
+```
+We use the log of the daily median flow at S05 as a general watershed-wide
+stream flow indicator, which we call `FlowIndex`.  We use the log of the raw
+median, to lessen the effect of the highly skewed distribution of stream depths
+on the metric. The resulting index is still highly skewed.
+
+```{r FlowIndex}
+depth_data <- exceeds %>%
+  filter (Site == 'S05') %>%
+  select(sdate, lD_Median)
+
+exceeds <- exceeds %>%
+  mutate(FlowIndex = depth_data$lD_Median[match(sdate, depth_data$sdate)])
+
+rm(depth_data)
+```
+
+## Create July and August Data Only
+```{r filter_July_August}
+exceeds_two <- exceeds %>%
+  filter(Month  > 6 & Month < 9)
+rm(exceeds)
+```
+
+# Graphics of Observed Relative Frequencies
+## Site by Year
+```{r calc_observed}
+rel_freq <- exceeds_two %>%
+  group_by(Year, Site) %>%
+  summarize(n = sum(! is.na(ClassCDO)),
+            n_pass = sum(ClassCDO, na.rm = TRUE),
+            n_fail = n - n_pass,
+            p = n_pass / n,
+            q = n_fail / n,
+            v_p =p*q/n,
+            sd_p = sqrt(v_p),
+            .groups = 'drop')
+```
+
+```{r plot_observed, fig.width = 7, fig.height = 5}
+ggplot(rel_freq, aes(Year, p, color = Site)) +
+  geom_line(size = 1.25) +
+  geom_point(size = 2) +
+  geom_linerange(aes(ymin = p-sd_p, ymax = p + sd_p)) +
+  scale_color_manual(values = cbep_colors()) +
+  ylab('Summer Proportion Exceeding\nClass C DO Standard') +
+  xlab('')
+
+ggsave('figures/do_observed_exceed_summer.pdf', device = cairo_pdf, width = 7, height = 5)
+
+```
+
+## Site Only
+```{r calc_observed_sites}
+rel_freq <- exceeds_two %>%
+  group_by(Site) %>%
+  summarize(n = sum(! is.na(ClassCDO)),
+            n_pass = sum(ClassCDO, na.rm = TRUE),
+            n_fail = n - n_pass,
+            p = n_pass / n,
+            q = n_fail / n,
+            v_p =p*q/n,
+            sd_p = sqrt(v_p),
+            .groups = 'drop')
+rel_freq
+```
+
+### Observed Graphic
+We start with a graphic based only on teh observed relative frequencies. But
+the problem is that the years is which we have actual data vary site by site, so
+the comparison is not really fair. Also, teh standard errors offered here are
+much too narrow, since observations are correlated.
+```{r plot_observed_sites, fig.width = 5, fig.height = 4}
+ggplot(rel_freq, aes(Site, p)) +
+  #geom_point(size = 2, color = cbep_colors()[4]) +
+  geom_pointrange(aes(ymin = p-1.96*sd_p, ymax = p + 1.96*sd_p), 
+                  color = cbep_colors()[5],
+                  size = .75) +
+  scale_color_manual(values = cbep_colors()) +
+  ylab('Proportion of Summer Days Meeting\nClass C DO Standard') +
+  xlab('Upstream          Main Stem         Downstream') +
+  ylim(0,1) +
+  theme_cbep(base_size = 12)
+
+ggsave('figures/do_observed_exceed_summer_site_only.pdf', device = cairo_pdf, width = 7, height = 5)
+
+```
+
+### Model based Graphics
+This generates a graphic with more honest error bars, because it properly 
+incorporates autocorrelation and year to year variation.
+
+#### Model Development
+```{r do_gamm_site, cache = TRUE}
+do_gamm_two_site<- gamm(ClassCDO ~ 0 + Site + s(year_f, bs = 're'),
+                      correlation = corCAR1(form = ~ sdate | Site),
+                      family = 'binomial',
+                      niterPQL = 20, verbosePQL = TRUE,
+                      data = exceeds_two)
+```
+
+```{r}
+summary(do_gamm_two_site$gam)
+```
+
+#### Extract Marginal Means
+```{r do_construct_call_sites}
+the_call <-  quote(gamm(ClassCDO ~ 0 + Site + s(year_f, bs = 're'),
+                      correlation = corCAR1(form = ~ sdate | Site),
+                      family = 'binomial',
+                      niterPQL = 20, verbosePQL = TRUE,
+                      data = exceeds_two))
+do_gamm_two_site$gam$call <- the_call
+
+(my_ref_grid <- ref_grid(do_gamm_two_site, cov.reduce = median)) 
+(a <- summary(emmeans(my_ref_grid, ~ Site, type = 'response')))
+
+```
+
+```{r plot_sites_model, fig.width = 5, fig.height = 4}
+ggplot(a, aes(Site, prob)) +
+  #geom_point(size = 2, color = cbep_colors()[4]) +
+  geom_pointrange(aes(ymin = lower.CL, ymax = upper.CL), 
+                  color = cbep_colors()[5],
+                  size = .75) +
+  scale_color_manual(values = cbep_colors()) +
+  ylab('Probability of Summer Days Meeting\nClass C DO Standard') +
+  xlab('Upstream          Main Stem         Downstream') +
+  ylim(0,1) +
+  theme_cbep(base_size = 12)
+
+ggsave('figures/do_exceed_summer_site_model.pdf', device = cairo_pdf, width = 7, height = 5)
+
+```
