@@ -127,7 +127,7 @@ def MaineStations():
 def getmonthrange (year,month):
     monthlengths = MONTHLENGTHS
     start = date(year, month, 1).strftime('%Y-%m-%d')
-    if (year/100.0 != year/100) and (year/4.0 == year/4):
+    if (year/100 != year//100) and (year/4 == year//4):
         # it's a leapyear
         monthlengths[1]=29
     else:
