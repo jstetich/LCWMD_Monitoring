@@ -1,0 +1,1573 @@
+---
+title: "Analysis of LCWMD 'Chloride' Data based on Conductivity Measurement"
+author: "Curtis C. Bohlen, Casco Bay Estuary Partnership."
+date: "01/06/2021"
+output:
+  github_document:
+    toc: true
+    fig_width: 5
+    fig_height: 4
+---
+<img
+    src="https://www.cascobayestuary.org/wp-content/uploads/2014/04/logo_sm.jpg"
+    style="position:absolute;top:10px;right:50px;" />
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center',
+                      fig.width = 5, fig.height = 4,
+                      collapse = TRUE, comment = "#>")
+```
+
+# Introduction
+This R Notebook explores various models for analyzing chloride levels in Long
+Creek. Our principal goal is NOT to predict future values, but to assess the
+contribution of certain (time varying) predictors to explaining the pattern in
+the time series.
+
+This notebook looks principally at chlorides, which are frequently elevated in
+Maine urban streams because of use of salt for deicing of roads, parking areas,
+sidewalks, and paths in winter.  While water quality standards are often written
+in terms of chlorides, it may be better to think about chlorides as a measure of
+the salinity of the water in the stream. Physiologically, it is probably
+salinity or osmolarity that principally affects organisms in the stream, not
+chlorides *per se*. The data we examine here is based on measurement of
+conductivity, which is converted to an estimate of in-stream chlorides based on
+a robust regression relationship developed over several years.
+
+We are especially interested in looking at whether there have been long-term
+trends in water quality over the duration of the LCWMD monitoring program.
+
+We develop various models that predict chlorides based on site, precipitation,
+and stream flow,to reduce unexplained variability in the data, and 
+better characterize seasonal patterns and long term trends.
+
+Simple linear models of the LCWMD data are based on the assumption that
+observations are independent, however, we know both on principal and from
+working with the data, that the data are both auto-correlated and
+cross-correlated in complex ways. More robust analysis needs to address that 
+reality.
+
+We sequentially work through 
+1.  Linear models.  
+2.  Generalized Least Squares Models with autocorrelated (ar1) error.  
+3.  Generalized Additive Models with autocorrelated (ar1) error.
+
+
+In each case we explore several models that estimate 
+1.  Effect of time of year (Month, or Day of Year)
+2.  Effect of Site
+3.  Differences (if any) in trends from site to site.
+
+To approach this question, we consider models of the form:
+
+$$ Chlorides = f(Covariates) + Predictors + Error$$
+
+Where:
+*  precipitation and flow covariates enter into the model via linear or smooth 
+   functions. Precipitation terms are uniform across sites, but the flow
+   correction can vary site to site.
+   
+*  The predictors include linear functions of:  
+   --  site,  
+   --  year,  
+   --  a site by year interaction, and  
+   --  time of year.
+   
+* The error includes either a simple normal error or a combination of a
+  normal error and an AR(1) autocorrelated error.
+
+We abuse the autocorrelation models slightly, since we use sequential
+autocorrelations (not time-based) and we don't fit separate autocorrelations for
+each site and season. That should have little impact on results, as transitions
+are relatively rare in a dense data set, and missing values at the beginning of
+each season at each site prevent estimation near season and site transitions in
+the sequential data anyway.
+
+Note that rather than work with time series methods, we use linear models that
+incorporate lag terms, especially autocorrelated errors and lagged precipitation
+variables instead.
+
+The analysis may appear somewhat cavalier, but that is because much of the usual
+statistical legwork was carried out previously.  We explored dozens of models
+before settling on the ones we present here.  We have checked model diagnostics.
+
+On the whole, these models are OK, but not great. They tend to have heavy
+tailed, skewed residuals. We should not trust the asymptotic p values calculated
+by default. But since sample sizes are large and results tend to have high
+statistical significance, p values are not much use anyway. Even traditional
+methods using information criteria are relatively little help for identifying
+minimal models that make efficient use of the flow and precipitation covariates.
+
+# Import Libraries  
+```{r}
+library(tidyverse)
+library(readr)
+
+library(emmeans) # Provides tools for calculating marginal means
+library(nlme)
+
+#library(zoo)     # here, for the `rollapply()` function
+
+library(mgcv)    # generalized additive models. Function gamm() allows
+                 # autocorrelation.
+
+library(CBEPgraphics)
+load_cbep_fonts()
+theme_set(theme_cbep())
+```
+
+# Data Preparation
+## Initial Folder References
+```{r}
+sibfldnm    <- 'Original_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+
+dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
+dir.create(file.path(getwd(), 'models'), showWarnings = FALSE)
+```
+
+## Load Weather Data
+```{r load_weather_data}
+fn <- "Portland_Jetport_2009-2019.csv"
+fpath <- file.path(sibling, fn)
+
+weather_data <- read_csv(fpath, 
+ col_types = cols(.default = col_skip(),
+        date = col_date(),
+        PRCP = col_number(), PRCPattr = col_character() #,
+        #SNOW = col_number(), SNOWattr = col_character(), 
+        #TMIN = col_number(), TMINattr = col_character(), 
+        #TAVG = col_number(), TAVGattr = col_character(), 
+        #TMAX = col_number(), TMAXattr = col_character(), 
+        )) %>%
+  rename(sdate = date) %>%
+  mutate(pPRCP = dplyr::lag(PRCP))
+```
+
+## Update Folder References
+```{r}
+sibfldnm    <- 'Derived_Data'
+parent      <- dirname(getwd())
+sibling     <- file.path(parent,sibfldnm)
+```
+
+## Load Data on Sites and Impervious Cover
+These data were derived from Table 2 from a GZA report to the Long Creek
+Watershed Management District, titled "Re: Long Creek Watershed Data Analysis;
+Task 2: Preparation of Explanatory and Other Variables."  The Memo is dated
+November 13, 2019 File No. 09.0025977.02.
+
+Cumulative Area and IC calculations are our own, based on the GZA data and the
+geometry of the stream channel.
+
+```{r}
+# Read in data and drop the East Branch, where we have no data
+fn <- "Site_IC_Data.csv"
+fpath <- file.path(sibling, fn)
+
+Site_IC_Data <- read_csv(fpath) %>%
+  filter(Site != "--") 
+
+# Now, create a factor that preserves the order of rows (roughly upstream to downstream). 
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(Site = factor(Site, levels = Site_IC_Data$Site))
+
+# Finally, convert percent covers to numeric values
+Site_IC_Data <- Site_IC_Data %>%
+  mutate(CumPctIC = as.numeric(substr(CumPctIC, 1, nchar(CumPctIC)-1))) %>%
+  mutate(PctIC = as.numeric(substr(PctIC, 1, nchar(PctIC)-1)))
+Site_IC_Data
+```
+
+## Load Main Data
+Read in the data from the Derived Data folder.
+
+Note that I filter out data from 2019 because that is only a partial year, which might affect estimation of things like seasonal trends.  We could add it back in, but with care....
+
+*Full_Data.csv* does not include a field for precipitation from the
+previous day.  In earlier work, we learned that a weighted sum of recent
+precipitation provided better explanatory power.  But we also want to check
+a simpler model, so we construct a "PPrecip" data field.  This is based
+on a modification of code in the "Make_Daily_Summaries.Rmd" notebook.
+
+```{r}
+fn <- "Full_Data.csv"
+fpath <- file.path(sibling, fn)
+
+full_data <- read_csv(fpath, 
+    col_types = cols(DOY = col_integer(), 
+        D_Median = col_double(), Precip = col_number(), 
+        X1 = col_skip(), Year = col_integer(), 
+        FlowIndex = col_double())) %>%
+
+  mutate(Site = factor(Site, levels=levels(Site_IC_Data$Site))) %>%
+  mutate(Month = factor(Month, levels = month.abb)) %>%
+  mutate(IC=as.numeric(Site_IC_Data$CumPctIC[match(Site, Site_IC_Data$Site)])) %>%
+  mutate(Yearf = factor(Year)) %>%
+
+# We combine data using "match" because we have data for multiple sites and 
+# therefore dates are not unique.  `match()` correctly assigns weather
+# data by date.
+mutate(PPrecip = weather_data$pPRCP[match(sdate, weather_data$sdate)])
+
+```
+
+### Cleanup
+```{r}
+rm(Site_IC_Data, weather_data)
+rm(fn, fpath, parent, sibling, sibfldnm)
+```
+
+## Data Correction
+
+### Anomolous Depth Values
+Several depth observations in the record appear highly unlikely. In particular,
+several observations show daily median water depths over 15 meters. And
+those observations were recorded in May or June, at site S05, with no associated 
+record of significant precipitation, and no elevated depths at other sites on 
+the stream.
+
+We can trace these observations back to the raw QA/QC'd pressure and sonde data 
+submitted to LCWMD by GZA, so they are not an artifact of our data preparation.
+
+A few more observations show daily median depths over 4 meters, which also
+looks unlikely in a stream of this size.  All these events also occurred in 
+May or June of 2015 at site S05. Some sort of malfunction of the pressure 
+transducer appears likely.
+
+We remove these extreme values.  The other daily medians in May and June of 2015
+appear reasonable, and we leave them in place, although given possible 
+instability of the pressure sensors, it might make sense to remove them all.
+```{r}
+full_data <- full_data %>%
+  mutate(D_Median = if_else(D_Median > 4, NA_real_, D_Median),
+         lD_Median = if_else(D_Median > 4, NA_real_, lD_Median))
+```
+
+### Single S06B Chloride Observation from 2017
+The data includes just a single chloride observation from site S06B from
+any year other than 2013.  While we do not know if the data point is legitimate
+or not, it has very high leverage in several models, and we suspect a 
+transcription error of some sort.
+```{r fig.width = 3, fig.height = 2}
+full_data %>%
+  filter(Site == 'S06B') %>%
+  select(sdate, Chl_Median) %>%
+  ggplot(aes(x = sdate, y = Chl_Median)) + geom_point()
+```
+
+We remove the Chloride value from the data.
+```{r}
+full_data <- full_data %>%
+  mutate(Chl_Median = if_else(Site == 'S06B' & Year > 2014,
+                              NA_real_, Chl_Median))
+```
+
+## Add Stream Flow Index
+We worked through many models on a site by site basis in which we included data
+on water depth, but since the depth coordinate is site-specific, a 10 cm depth
+at one site may be exceptional, while at another it is commonplace. We generally
+want not a local measure of stream depth, but a watershed-wide metric of high,
+medium, or low stream flow.
+
+Middle and Lower Maine Stem sites would be suitable for a general flow indicator
+across the watershed. The monitoring sites in that stretch of Long Creek include
+include S05 and S17, however only site S05 has been in continuous operation
+throughout the period of record, so we use depth data from S05 to construct
+our general stream flow indicator.
+
+Stream flow at S05 is correlated with flow at other sites, although not all that
+closely correlated to flow in the downstream tributaries.
+
+```{r}
+full_data %>%
+  select(sdate, Site, lD_Median) %>%
+  pivot_wider(names_from = Site, values_from = lD_Median) %>%
+  select( -sdate) %>%
+  cor(use = 'pairwise', method = 'pearson')
+
+```
+
+We use the log of the daily median flow at S05 as a general watershed-wide
+stream flow indicator, which we call `FlowIndex`.  We use the log of the raw
+median, to lessen the effect of the highly skewed distribution of stream depths
+on the metric.
+
+```{r}
+depth_data <- full_data %>%
+  filter (Site == 'S05') %>%
+  select(sdate, lD_Median)
+
+full_data <- full_data %>%
+  mutate(FlowIndex = depth_data$lD_Median[match(sdate, depth_data$sdate)])
+  rm(depth_data)
+```
+
+Note that because the flow record at S05 has some gaps, any model using this
+predictor is likely to have a smaller sample size.
+
+## Create Working Data
+Including Site = S06B in the GLS models causes an error, because models that
+includes a Site:Year interaction are rank deficient.  We only have one year's
+worth of data from that site.  (`lm()` handles that case
+gracefully, `gls()` does not.)
+
+```{r}
+xtabs(~ Site + Year, data = full_data)
+```
+
+We proceed with analyses that omits Site S06B.
+```{r}
+reduced_data <- full_data %>%
+  select (Site, Year, Month, DOY,
+          Precip, lPrecip, PPrecip, wlPrecip,
+          D_Median, lD_Median,
+          Chl_Median, 
+          IC, FlowIndex) %>%
+  filter (Site != 'S06B' ) %>%
+    mutate(Site = droplevels(Site)) %>%
+  mutate(Year_f = factor(Year))
+```
+
+## Cleanup
+```{r}
+rm(full_data)
+```
+
+
+# Linear Models
+
+We begin by developing several simple linear models.  We do not have much
+confidence in these models, but they are a starting point for understanding the
+analytic choices we face in developing more sophisticated models.
+
+## Two Starting Models
+We use these principally to demonstrate the sizable advantage of our weighted 
+recent rainfall predictor over a simple lagged rainfall metric.
+```{r}
+simple_lm_tmp <- lm(log(Chl_Median) ~ Site + 
+               lPrecip + 
+               log(PPrecip+1) +
+               FlowIndex +
+               Month + 
+               Year, 
+               data = reduced_data,
+               subset = ! is.na(wlPrecip))   # so both models use the same data
+AIC(simple_lm_tmp)
+
+the_lm <- lm(log(Chl_Median) ~ Site + 
+               lPrecip + 
+               wlPrecip +
+               FlowIndex +
+               Month + 
+               Year,
+             data = reduced_data)
+AIC(the_lm)
+anova(the_lm)
+```
+So the model using a weighted sum of recent rainfall does much better than one
+based only on the prior day's rainfall.  We continue, looking only at models  
+using weighted recent rainfall.
+
+## Initial Practical Model
+This model is the linear model prototype for similar GLS and GAM models we
+develop later.
+```{r}
+the_lm <- lm(log(Chl_Median) ~ Site + 
+               lPrecip + 
+               wlPrecip +
+               FlowIndex +
+               Month + 
+               Year +
+               Site: Year,
+             data = reduced_data)
+AIC(the_lm)
+anova(the_lm)
+
+```
+
+
+### Visualizing Estimated Marginal Means
+```{r}
+month.emm <- emmeans(the_lm, ~Month, 
+                     cov.reduce = median, 
+                     type = 'response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(month.emm) +
+  annotate('text', 450, 7, label = labl, size = 3) +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab('') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip()
+```
+
+```{r}
+site.emm <- emmeans(the_lm, ~Site, 
+                    cov.reduce = median, 
+                    type='response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation'
+
+plot(site.emm) +
+  annotate('text', 450, 2.5, label = labl, size = 3) +
+  ylab("Upstream        Main Stem                 Lower Tribs         ") +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip() 
+```
+
+### Visualizing Trends
+We use `emmeans()` and `emtrends()` to extract 
+```{r}
+a <- summary(emmeans(the_lm, 'Site', 
+                     cov.reduce = median))
+b <- summary(emtrends(the_lm, 'Site', 'Year', 
+                      cov.reduce = median))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+```
+
+And create a temporary dataframe for the results.
+```{r}
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+```
+```{r}
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Flow-Adjusted Annual Mean Chloride')
+```
+
+```{r}
+rm(df)
+```
+
+## Model Selection Using `step()`
+```{r}
+full_lm <- lm(log(Chl_Median) ~ Site + 
+               lPrecip * wlPrecip * FlowIndex +
+               FlowIndex : Site +   # We expect flow to play out differently by site
+               Month + 
+               Year + 
+               Year:Site,
+              data = reduced_data)
+
+step_lm <- step(full_lm,
+                upper = )
+anova(step_lm)
+```
+The best fit linear model includes Site terms related to the Flow Index,
+and interaction terms relating precipitation and recent precipitation to flow
+conditions.  The sums of squares associated with the interaction terms, however,
+are quite low.  We could probably drop the interaction terms for the sake of
+simplicity, but we retain it for now, as the GLS analyses are likely to be
+slightly more parsimonious.
+
+```{r}
+plot(step_lm)
+```
+
+The distribution of errors is skewed, and there are a couple of outliers, 
+luckily all with low leverage. None of the points have especially high leverage.
+If anything the model is slightly light tailed, which suggests an underfit
+model.
+
+```{r}
+old <- options() 
+options(digits=3,scipen=2)
+summary(step_lm)
+options(old)
+rm(old)
+```
+So:
+1. Present-day precipitation suppresses chlorides, but effect is tiny compared
+   to the effect of recent precipitation, and depends on flow conditions.
+   The Effect of precipitation is lower under high flow conditions.  It's not
+   yet clear how to include those terms in more complex models.
+3. Chlorides have been INCREASING over the period of record, but the rate of
+   change varies by Site.
+6. The highest (flow adjusted) chlorides are in the winter months, especially 
+   February and March. Flow adjusted Chlorides are lowest in summer!
+
+### Visualizing Estimated Marginal Means
+```{r}
+month.emm <- emmeans(step_lm, ~Month, 
+                     cov.reduce = median, 
+                     type = 'response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(month.emm) +
+  annotate('text', 400, 6, label = labl, size = 3) +
+  ylab("Month")+
+  xlab('Flow-Adjusted Chlorides (mg/l)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip()
+```
+
+```{r}
+site.emm <- emmeans(step_lm, ~Site, 
+                    cov.reduce = median, 
+                    type='response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation'
+
+
+plot(site.emm) +
+  annotate('text', 450, 2.5, label = labl, size = 3) +
+  ylab("Upstream        Main Stem                 Lower Tribs         ") +
+  xlab('Chlorides (mg/l)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip() 
+```
+
+### Visualizing Trends
+We extract marginal means and marginal slopes using `emmeans()` and
+`emtrends()`.  These calculate marginal means at "typical" conditions - usually
+the means of all other predictors, but we specify medians, which handle
+skewed predictors better. 
+```{r}
+a <- summary(emmeans(step_lm, 'Site', 
+                     cov.reduce = median))
+b <- summary(emtrends(step_lm, 'Site', 'Year', 
+                      cov.reduce = median))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+```
+And create a temporary dataframe for the results.
+```{r}
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+```
+```{r}
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+  geom_step(direction = 'mid') +
+  ggtitle('Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  ylab('Flow-Adjusted Mean Chloride')
+```
+
+```{r}
+rm(df)
+```
+
+The big outlier here is S17, which is a partial record, and thus can not say
+much about the longer-term trends.  S03 is a full record, but that is the South
+Branch, which has separate issues.
+
+```{r}
+plot(emtrends(step_lm, 'Site', 'Year', cov.reduce = median)) +
+  geom_vline(xintercept = 0) +
+ xlab('Slope of Predicted Log of Chloride (mg/l)' )
+```
+
+## Cleanup
+```{r}
+rm(full_lm, simple_lm_tmp, step_lm)
+```
+
+
+
+# GLS Analyses
+We can improve on those models two ways:
+1.  By taking into account temporal autocorrelation and
+2.  By allowing relationships with predictors to be non-linear
+
+Here we use generalize least squares to accommodate autocorrelated errors.
+
+We abuse the autocorrelation model slightly, since we don't fit
+separate autocorrelations for each site and season.  That should have little
+impact on results, as transitions are rare, and missing values at beginning 
+of most seasonal time series prevent estimation near season and site transitions
+in the sequential data anyway.
+
+## Initial Model
+This model mirrors the simple linear model.
+This model takes about a minute to run.
+```{r}
+the_gls_ml <- gls(log(Chl_Median) ~ Site + 
+               lPrecip + 
+               wlPrecip +
+               FlowIndex +
+               Month + 
+               Year +
+               Site: Year,
+               correlation = corAR1(0.8),
+               na.action = na.omit, 
+               method = 'ML',
+               data = reduced_data)
+anova(the_gls_ml)
+```
+
+This produces coefficients that are rather different from the simple linear
+model, although differences in predictions will likely be small.  The big
+differences relate to what is absorbed into the intercepts and what turns up 
+elsewhere.  Site S17 continues to cause trouble because of its relative short
+record.  For now, we leave it in place.
+```{r}
+cbind(coef(the_lm),coef(the_gls_ml))
+```
+
+### Refit the Simple Model with REML
+The function `emmeans()` is a bit happier working with models fit with REML.
+```{r}
+the_gls <- gls(log(Chl_Median) ~ Site + 
+               lPrecip + 
+               wlPrecip +
+               FlowIndex +
+               Month + 
+               Year +
+               Site : Year,
+               correlation = corAR1(0.8),
+               na.action = na.omit, 
+               method = 'REML',
+               data = reduced_data)
+summary(the_gls)
+```
+
+### Visualizing Estimated Marginal Means
+`emmeans()` fails to estimate Satterthwaite estimates of the effective
+degrees of freedom from GLS models, so we provide the `mode = "df.error"`
+parameter. This may slightly over estimate the degrees of freedom, and thus 
+cause tests to be overly optimistic.  See the 'models' vignette of `emmeans` 
+for details.
+```{r}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+month.emm <- emmeans(the_gls, ~ Month,
+                     cov.reduce = median,
+                     type = 'response',
+                     mode = "df.error")
+
+plot(month.emm) +
+  annotate('text', 400, 7, label = labl, size = 3) +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip()
+```
+
+```{r}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation'
+
+site.emm <- emmeans(the_gls, ~Site,
+                    cov.reduce = median,
+                    type ='response',
+                    mode = "df.error")
+plot(site.emm) +
+  annotate('text', 450, 2.5, label = labl, size = 3) +
+  ylab("Upstream        Main Stem                 Lower Tribs         ") +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip() 
+```
+
+### Visualizing Trends
+```{r}
+a <- summary(emmeans(the_gls, 'Site',
+             cov.reduce = median, 
+             mode = "df.error"))
+
+b <- summary(emtrends(the_gls, 'Site', 'Year',
+                      cov.reduce = median,
+                      mode = "df.error"))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+             Year = rep(2010:2018, 5)) %>%
+      mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+             iintercept = lookup$Intercept[match(Site, lookup$Site)],
+             pred = exp((Year - 2014) * sslope + iintercept)) %>%
+      select(-sslope, -iintercept)
+
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Predicted Mean Chloride') +
+  theme_cbep(base_size = 12)
+```
+Which shows fairly consistent behavior across sites.  Again, the slope
+for S17 reflect only a few recent years.
+
+```{r}
+rm(a,b)
+```
+
+## Model Selection Using `step()`
+Fitting a larger GLS model takes a few minutes.
+```{r}
+full_gls <- gls(log(Chl_Median) ~ Site + 
+                  lPrecip * wlPrecip * FlowIndex +
+                  FlowIndex : Site +   # We expect flow to play out differently by site
+                  Month + 
+                  Year + 
+                  Site:Year,
+               correlation = corAR1(0.8),
+               na.action = na.omit,
+               method = 'ML',
+               data = reduced_data)
+```
+
+The following does not work if we use the function `step()`, so we use the 
+similar function from the `MASS` package. Since we don't need that package
+otherwise, we load the function by a direct call to the package namespace.
+
+As this fits several GLS models, it takes several minutes to run to completion.
+```{r}
+step_gls <- MASS::stepAIC(full_gls)
+anova(step_gls)
+```
+
+The stepwise procedure retains all interactions among the covariates. Those
+sharply increase model complexity, but hugely increase  the log likelihood as
+well.
+```{r}
+anova(the_gls_ml, step_gls)
+```
+
+Although stepwise selection uses an automated procedure to identify the "best"
+model for predictive purposes, in our setting, a simpler model is easier to 
+understand, explain, and communicate. We want to find a model that has a better 
+balance between complexity and adequacy.  It would be nice if most of the 
+improvement in model fit is associated with only a couple of the covariates.
+
+We need to check.
+
+## Manual Identification of Simpler Models
+We look at the impact of dropping single terms from the "best" model.  This 
+fits several alternate models, and so takes some time.
+```{r}
+drop1(step_gls, test = 'Chisq')
+```
+So dropping the three-way interaction has the smallest effect on likelihood.
+Interestingly, dropping the Site : Year interaction term also has relatively 
+low effect of likelihood, but as that is a focus of the analysis, rather than 
+a covariate, we retain it.
+
+```{r}
+gls_1 <- update(step_gls, . ~ . - lPrecip:wlPrecip:FlowIndex )
+drop1(gls_1, test = 'Chisq')
+```
+```{r}
+gls_2 <- update(gls_1, . ~ . - lPrecip:wlPrecip )
+drop1(gls_2, test = 'Chisq')
+```
+
+```{r}
+gls_3 <- update(gls_2, . ~ . - wlPrecip:FlowIndex )
+drop1(gls_3, test = 'Chisq')
+```
+
+At this point, any further simplification of the covariate terms in the model
+has relatively large impact on likelihoods.
+
+```{r}
+anova(step_gls, gls_3)
+```
+
+### Refit the Selected Model with REML
+The function `emmeans()` is a bit happier working with models fit with REML.
+```{r}
+selected_gls <- update(gls_3,  method = 'REML')
+anova(selected_gls)
+```
+
+### Visualizing Estimated Marginal Means
+```{r}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+month.emm <- emmeans(selected_gls, ~ Month,
+                     cov.reduce = median,
+                     type = 'response',
+                     mode = "df.error")
+
+plot(month.emm) +
+  annotate('text', 400, 7, label = labl, size = 3) +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip()
+```
+
+```{r}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation'
+
+
+site.emm <- emmeans(selected_gls, ~Site,
+                    cov.reduce = median,
+                    type ='response',
+                    mode = "df.error")
+plot(site.emm) +
+  annotate('text', 450, 2.5, label = labl, size = 3) +
+  ylab("Upstream        Main Stem                 Lower Tribs         ") +
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ggtitle('Marginal Geometric Means of Daily Medians') +
+  theme_cbep(base_size = 12) +
+  coord_flip() 
+```
+
+### Visualizing Trends
+```{r}
+a <- summary(emmeans(selected_gls, 'Site',
+             cov.reduce = median, 
+             mode = "df.error"))
+
+b <- summary(emtrends(selected_gls, 'Site', 'Year',
+                      cov.reduce = median,
+                      mode = "df.error"))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+             Year = rep(2010:2018, 5)) %>%
+      mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+             iintercept = lookup$Intercept[match(Site, lookup$Site)],
+             pred = exp((Year - 2014) * sslope + iintercept)) %>%
+      select(-sslope, -iintercept)
+
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Predicted Mean Chloride') +
+  theme_cbep(base_size = 12)
+```
+Which shows fairly consistent behavior across sites.  Again, the slope
+for S17 reflect only a few recent years.
+
+```{r}
+rm(a,b)
+```
+
+## Cleanup
+```{r}
+rm(the_gls_ml, step_gls, gls_3, gls_2, gls_1)
+```
+
+# GAMM Analysis
+Here we use more sophisticated "General Additive Models" that allow non-linear
+(smoother) fits for some parameters. Our emphasis is on using smoothers to 
+better account for non-linearities in relationships between weather or
+flow-related predictors and chlorides.
+
+We use the function `gamm()` because it has a relatively simple interface for
+incorporating autocorrelated errors.
+
+We abuse the autocorrelation model slightly, since we don't fit
+separate autocorrelations for each site and season.  That should have little
+impact on results, as missing values at beginning and end of most time series
+prevent estimation anyway.
+
+## Initial Model
+Our first GAMM simply fits smoothers for each of the major weather-related
+covariates.  Arguably, we should fit separate smoothers by `FlowIndex` for
+each site, but we did not include interaction terms in our earlier base models, 
+so we leave that out here as well.
+
+This model takes several minutes to run (more than 5, less than 15)
+```{r first_gamm, cache = TRUE}
+if (! file.exists("models/the_gamm.rds")) {
+  the_gamm <- gamm(log(Chl_Median) ~ Site + 
+                     s(lPrecip) + 
+                     s(wlPrecip) +
+                     s(FlowIndex) +
+                     Month +
+                     Year +
+                     Site : Year,
+                   correlation = corAR1(0.8),
+                   na.action = na.omit, 
+                   method = 'REML',
+                   data = reduced_data)
+  saveRDS(the_gamm, file="models/the_gamm.rds")
+} else {
+  the_gamm <- readRDS("models/the_gamm.rds")
+}
+```
+
+```{r}
+anova(the_gamm$gam)
+```
+Interestingly, differences between sites and differences in slopes are marginally
+not significant in this simplified model.
+```{r}
+plot(the_gamm$gam)
+```
+Note that the function for recent weighted precipitation is nearly linear,
+while the effect of present-day precipitation is near zero for low to moderate
+rainfall, but drops quickly for rainfall over about 4 cm or 1.5 inches (rare
+events).  Chlorides drop with increasing water depth, up to a point, but then 
+climb again at the highest (very rare) flow levels.
+
+What these smoothers show is that sticking with linear terms for many of our
+covariates should work fairly well, except at the highest flow conditions.  We
+might also consider adding a "high rainfall"  term, rather than fitting a
+a linear or smoothed predictor term for today's rain. The cost of such model
+simplification would be a drop in ability to accurately predict chloride
+levels under the highest flow, highest rainfall conditions.
+
+### Diagnostic Plots
+The help files for `gam.check()` suggest using care when interpreting results
+for GAMM models, since the function does not correctly incorporate the error
+correlations structure.  However, for our purposes, this is probably sufficient,
+since our focus is not on statistical significance, but on estimation.
+```{r}
+gam.check(the_gamm$gam)
+```
+As with the linear model, we have a skewed, slightly heavy tailed distribution
+of residuals, with a couple of very large outliers. There is perhaps slight
+evidence for lack of complete independence between residuals and predictors.  T
+his model is adequate, but not great.  For careful work, we should probably use
+bootstrapped confidence intervals or something similar, but for our purposes, 
+that is probably overkill.
+
+### Visualizing Estimated Marginal Means
+Reliably calling `emmeans()` for these large `gamm()` models appears to require 
+creating a call object and associating it with the model (e.g., as
+`the_gamm$gam$call`). (See the `emmeans` models vignette for more info, although
+not all strategies recommended there worked for us).
+
+We first create the call object, then associate it with the model, and finally
+manually construct a reference grid before calling `emmeans()` to extract
+marginal means.  This workflow has the advantage that it requires us to think
+carefully about the structure of the reference grid.
+
+Note also that we explicitly specify that we want the marginal means estimated 
+at Year = 2014.  This is largely to be explicit, and avoid possible confusion 
+from here on out.  The default method creates a reference grid where marginal 
+means are keyed to mean values of all predictors, which would be some value 
+slightly larger than 2014.  However, we specified `cov.reduce = median`, and the
+median Year predictor is precisely 2014.  Although this setting is probably
+unnecessary, we chose to be explicit from here on out.
+
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                          s(lPrecip) + 
+                          s(wlPrecip) +
+                          s(FlowIndex) +
+                          Month +
+                          Year +
+                          Site : Year,
+                        correlation = corAR1(0.8),
+                        na.action = na.omit, 
+                        method = 'REML',
+                        data = reduced_data))
+the_gamm$gam$call <- the_call
+
+my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median) 
+a <- emmeans(my_ref_grid, ~ Month, type = 'response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  annotate('text', 400, 6, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+```
+
+Note that all estimated monthly means are somewhat lower than from the GLS
+model.
+
+```{r fig.width = 5, fig.height = 4}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
+
+a <- emmeans(my_ref_grid, ~ Site, type = 'response')
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab("Upstream                  Main Stem                                 Lower Tribs                   ") +
+  annotate('text', 400, 2.5, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+
+```
+
+### Visualizing Trends
+We extract results on the log scale, so we can calculate the linear 
+predictor by hand, then back transform.
+```{r}
+my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014, Month = 'Jul'),
+                        cov.reduce = median)
+
+a <- summary(emmeans(my_ref_grid, 'Site'))
+b <- summary(emtrends(the_gamm, 'Site', 'Year'))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+```
+
+```{r}
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  xlab('') +
+  ylim(0,600) +
+  geom_hline(yintercept =  230, color = 'black') +
+  #geom_hline(yintercept =  860, color = 'red') +
+
+  theme_cbep(base_size = 12)
+```
+
+## Full Model
+The Full model explores a series of interaction smoothers using tensor smooth
+terms.  This allows testing of which terms are important int eh model, much as
+one might do by looking at interactions in linear models.  A similar  (but not 
+identical)  final model can be refit more compactly and with fewer parameters 
+by fitting equivalent joint smooths that only include important components.
+
+Unfortunately, using `stepAIC()` for GAMM models is tricky, as we need to use
+tensor terms to explore model structure. And neither `step()` nor `stepAIC()`
+appear to work reliably with a GAMM model.
+
+The full GAMM takes over an hour to run. To speed up analysis,
+we save a copy of the model for reuse.  But this may pose a problem if the model
+or the underlying data changes, in which case you need to delete the old version
+of the model manually.
+```{r full_gamm, cache = TRUE}
+if (! file.exists("models/full_gamm.rds")) {
+  full_gamm <- gamm(log(Chl_Median) ~ Site + 
+                      ti(lPrecip) +
+                      ti(wlPrecip) + 
+                      ti(FlowIndex, by = Site) +
+                      ti(lPrecip,  wlPrecip) +
+                      ti(lPrecip, FlowIndex) +
+                      ti(wlPrecip, FlowIndex) +
+                      ti(lPrecip, wlPrecip, FlowIndex) +
+                      Month +
+                      Year + 
+                      Site:Year,
+                    correlation = corAR1(0.8),
+                    na.action = na.omit,
+                    method = 'REML',
+                    data = reduced_data)
+saveRDS(full_gamm, file="models/full_gamm.rds")
+} else {
+  full_gamm <- readRDS("models/full_gamm.rds")
+}
+```
+
+```{r}
+anova(full_gamm$gam)
+```
+
+All terms are highly significant by ANOVA, except differences among sites.
+but several interaction terms terms have high standard errors / low T values,
+despite appearing statistically significant by ANOVA.
+```{r}
+summary(full_gamm$lme)
+```
+
+### Visualizing Estimated Marginal Means
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                      ti(lPrecip) +
+                      ti(wlPrecip) + 
+                      ti(FlowIndex, by = Site) +
+                      ti(lPrecip,  wlPrecip) +
+                      ti(lPrecip, FlowIndex) +
+                      ti(wlPrecip, FlowIndex) +
+                      ti(lPrecip, wlPrecip, FlowIndex) +
+                      Month +
+                      Year + 
+                      Site:Year,
+                    correlation = corAR1(0.8),
+                    na.action = na.omit,
+                    method = 'REML',
+                    data = reduced_data))
+
+full_gamm$gam$call <- the_call
+
+my_ref_grid <- ref_grid(full_gamm, at = list(Year = 2014), cov.reduce = median) 
+a <- emmeans(my_ref_grid, ~ Month, type = 'response')
+```
+
+```{r fig.width = 5, fig.height = 4}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  annotate('text', 400, 6, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  
+  coord_flip() +
+  
+  theme_cbep(base_size = 12)
+```
+
+```{r fig.width = 5, fig.height = 4}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
+
+a <- emmeans(my_ref_grid, ~ Site, type = 'response')
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab("Upstream                  Main Stem                                 Lower Tribs                   ") +
+  annotate('text', 400, 2.5, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+```
+
+### Visualizing Trends
+We extract results on the log scale, so we can calculate the linear 
+predictor by hand, then back transform.
+```{r}
+my_ref_grid <- ref_grid(full_gamm, at = list(Year = 2014, Month = 'Jul'),
+                        cov.reduce = median)
+a <- summary(emmeans(my_ref_grid, 'Site'))
+b <- summary(emtrends(full_gamm, 'Site', 'Year'))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  xlab('') +
+  ylim(0,600) +
+  geom_hline(yintercept =  230, color = 'black') +
+  #geom_hline(yintercept =  860, color = 'red') +
+
+  theme_cbep(base_size = 12)
+```
+
+## Simplified Models
+We examined numerous alternative model structures, on a site by site basis, 
+only to find predictions of most reasonable models were highly correlated, with
+a correlation coefficient over 0.98, and often over 0.99.  Thus for most
+purposes, the performance differences between "best" models and "good" models 
+will be small.  That matters principally because these complex models are so
+slow to run that we can not practically explore multiple model alternatives.
+
+Here we develop models that omits all interaction terms.  This is the simplest
+model that incorporates different site by FlowIndex smoothers, making it more 
+directly comparable to the Full model
+
+This took about 20 minutes to run.
+```{r, alt_gamm_1, cache = TRUE}
+if (! file.exists("Models/alt_gamm_1.rds")) {
+  alt_gamm_1 <- gamm(log(Chl_Median) ~ Site + 
+                       s(lPrecip) +
+                       s(wlPrecip) + 
+                       s(FlowIndex, by = Site) +
+                       Month +
+                       Year + 
+                       Site:Year,
+                     correlation = corAR1(0.8),
+                     na.action = na.omit,
+                     method = 'REML',
+                     data = reduced_data)
+  saveRDS(alt_gamm_1, file="models/alt_gamm_1.rds")
+} else {
+  alt_gamm_1 <- readRDS("models/alt_gamm_1.rds")
+}
+```
+
+```{r}
+anova(alt_gamm_1$gam)
+```
+
+```{r}
+plot(alt_gamm_1$gam)
+```
+Those curves show fairly substantial differences in slope for the relationship
+between FlowIndex and Chlorides from site to site. However, over the majority of
+the range of the data, the relationships are not too far from linear.  This
+again suggests that and some inconsistency of response to increasing FlowIndex
+at each site.
+
+Some of the apparent effect is because these curves are fit to data with
+different depth ranges at each site, but are plotted across the entire observed
+dept  range, thus leading the curves to include spurious values outside the
+range of observed depths. In other words, the relationships that matter within
+each Site are close to linear, with just a bit of curvature tossed in, which is
+being overfit near the ends of the splines, where data is sparse.
+
+```{r}
+reduced_data %>%
+  select(Site, D_Median, lD_Median) %>%
+  group_by(Site) %>%
+  summarize(D_min = min(D_Median, na.rm = TRUE),
+            D_max = max(D_Median, na.rm = TRUE),
+            lD_min = min(lD_Median, na.rm = TRUE),
+            lD_max = max(lD_Median, na.rm = TRUE))
+```
+
+This is similar to the previous model, but using a Day of Year ('DOY') smoothed
+predictor instead of the month by month factor terms.  This model is also slow
+to run....
+```{r alt_gamm_2, cache = TRUE}
+if (! file.exists("Models/alt_gamm_2.rds")) {
+  alt_gamm_2 <- gamm(log(Chl_Median) ~ Site + 
+                       s(lPrecip) +
+                       s(wlPrecip) + 
+                       s(FlowIndex, by = Site) +
+                       s(DOY) +
+                       Year +
+                       Site:Year,
+                     correlation = corAR1(0.8),
+                     na.action = na.omit,
+                     method = 'REML',
+                     data = reduced_data)
+  saveRDS(alt_gamm_2, file="models/alt_gamm_2.rds")
+} else {
+  alt_gamm_2 <- readRDS("models/alt_gamm_2.rds")
+}
+```
+
+```{r}
+plot(alt_gamm_2$gam)
+```
+
+The effect of time of year remains whether expressed as monthly parameters
+or via a smoothing term.  The other smoothing terms have not changed
+appreciably.  The two models are functionally similar.  The Month by Month
+version provides slightly better graphics.
+
+### Visualizing Estimated Marginal Means
+Reliably calling `emmeans()` for these large `gamm()` models appears to require 
+creating a call object and associating it with the model (e.g., as
+`the_gamm$gam$call`). (See the `emmeans` models vignette for more info, although
+not all strategies recommended there worked for us).
+
+We first create the call object, then associate it with the model, and finally
+manually construct a reference grid before calling `emmeans()` to extract
+marginal means.  This workflow has the advantage that it requires us to think
+carefully about the structure of the reference grid.
+
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                       s(lPrecip) +
+                       s(wlPrecip) + 
+                       s(FlowIndex, by = Site) +
+                       Month +
+                       Year + 
+                       Site:Year,
+                     correlation = corAR1(0.8),
+                     na.action = na.omit,
+                     method = 'REML',
+                     data = reduced_data))
+
+alt_gamm_1$gam$call <- the_call
+
+my_ref_grid <- ref_grid(alt_gamm_1, at = list(Year = 2014), cov.reduce = median) 
+a <- emmeans(my_ref_grid, ~ Month, type = 'response')
+
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Sites Combined'
+
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab ('') +
+  annotate('text', 400, 6, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  
+  coord_flip() +
+  
+  theme_cbep(base_size = 12)
+```
+
+Note that all estimated monthly means are somewhat lower than from the GLS
+model.
+
+```{r fig.width = 5, fig.height = 4}
+labl <- 'Values Adjusted to Median Flow and\nMedian 10 Day Precipitation\nAll Dates Combined'
+
+a <- emmeans(my_ref_grid, ~ Site, type = 'response')
+plot(a) + 
+  xlab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  ylab("Upstream                  Main Stem                                 Lower Tribs                   ") +
+  annotate('text', 400, 2.5, label = labl, size = 3) +
+  xlim(0,500) +
+  geom_vline(xintercept =  230, color = 'orange') +
+  geom_vline(xintercept =  860, color = 'red') +
+  coord_flip() +
+  theme_cbep(base_size = 12)
+```
+
+### Visualizing Trends
+We extract results on the log scale, so we can calculate the linear 
+predictor by hand, then back transform.
+```{r}
+my_ref_grid <- ref_grid(alt_gamm_1, at = list(Year = 2014, Month = 'Jul'),
+                        cov.reduce = median)
+
+a <- summary(emmeans(my_ref_grid, 'Site'))
+
+b <- summary(emtrends(alt_gamm_1, 'Site', 'Year'))
+
+lookup <- tibble(Site = a[[1]], Intercept = a[[2]], Slope = b[[2]])
+rm(a,b)
+
+df <- tibble(Site = rep(levels(reduced_data$Site), each = 9), 
+              Year = rep(2010:2018, 5)) %>%
+  mutate(sslope =     lookup$Slope[match(Site, lookup$Site)],
+         iintercept = lookup$Intercept[match(Site, lookup$Site)],
+         pred = exp((Year - 2014) * sslope + iintercept)) %>%
+  select(-sslope, -iintercept)
+```
+
+```{r}
+ggplot(df, aes(x = Year, y = pred, color = Site)) +
+         geom_step(direction = 'mid') +
+  ylab('Chloride (mg/l)\n(Flow and Precipitation Adjusted)') +
+  xlab('') +
+  ylim(0,600) +
+  geom_hline(yintercept =  230, color = 'black') +
+  #geom_hline(yintercept =  860, color = 'red') +
+
+  theme_cbep(base_size = 12)
+```
+
+# Seeking a Simplifies GLS Model
+The GLS models run much more quickly, which is considerably more convenient
+that dealing with full GAMM models.  Also, there is value in using a model that
+does NOT include any interaction terms between covariates and Site, if only to 
+avoid warning labels on output.
+
+Most to the important nonlinearities in the covariate smoothers from the GAMM
+models occur at high rainfall and high flow conditions.  We can generate a
+simpler linear model that accounts for different behavior at high flows by 
+including appropriate indicator variables.
+
+```{r}
+reduced_data <- reduced_data %>%
+  mutate(high_precip =  Precip > 4,
+         high_flow = FlowIndex > 0.65)
+
+highflow_gls_1 <- gls(log(Chl_Median) ~ Site + 
+                        lPrecip +
+                        high_precip +
+                        wlPrecip +
+                        FlowIndex +
+                        high_flow +
+                        high_flow : lPrecip +
+                        high_flow : wlPrecip +
+                        Month +
+                        Year +
+                        Site:Year,
+                    correlation = corAR1(0.8),
+                    na.action = na.omit, 
+                    method = 'ML',
+                    data = reduced_data)
+```
+
+```{r}
+anova(highflow_gls_1)
+```
+
+
+```{r}
+summary(highflow_gls_1)
+```
+
+```{r}
+plot(highflow_gls_1)
+```
+
+# Comparison Of Estimated Marginal Means
+A quick review of the estimated marginal means from all of these models show
+very similar results for all of the GLS and GAMM models.  We gather marginal
+means for two GLS models and two GAM models to compare.
+
+## Calculate Monthly Marginal Means
+### the_gls
+```{r}
+month.emm_gls_1 <- summary(emmeans(the_gls, ~ Month,
+                           at = list(Year = 2014),
+                           cov.reduce = median,
+                           type = 'response',
+                           mode = "df.error"))
+```
+
+### selected_gls
+```{r}
+month.emm_gls_2 <- summary(emmeans(selected_gls, ~ Month,
+                           at = list(Year = 2014),
+                           cov.reduce = median,
+                           type = 'response',
+                           mode = "df.error"))
+```
+
+
+### highflow_gls_1
+```{r}
+month.emm_gls_3 <- summary(emmeans(highflow_gls_1, ~ Month,
+                           at = list(Year = 2014),
+                           cov.reduce = median,
+                           type = 'response',
+                           mode = "df.error"))
+```
+
+### the_gamm
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                          s(lPrecip) + 
+                          s(wlPrecip) +
+                          s(FlowIndex) +
+                          Month +
+                          Year +
+                          Site : Year,
+                        correlation = corAR1(0.8),
+                        na.action = na.omit, 
+                        method = 'REML',
+                        data = reduced_data))
+
+the_gamm$gam$call <- the_call
+
+my_ref_grid <- ref_grid(the_gamm, at = list(Year = 2014), cov.reduce = median)
+
+month.emm_gamm_1 <- summary(emmeans(my_ref_grid, ~ Month, type = 'response'))
+```
+
+### alt_gamm_1
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                       s(lPrecip) +
+                       s(wlPrecip) + 
+                       s(FlowIndex, by = Site) +
+                       Month +
+                       Year + 
+                       Site:Year,
+                     correlation = corAR1(0.8),
+                     na.action = na.omit,
+                     method = 'REML',
+                     data = reduced_data))
+
+alt_gamm_1$gam$call <- the_call
+
+my_ref_grid <- ref_grid(alt_gamm_1, at = list(Year = 2014), cov.reduce = median)
+
+month.emm_gamm_2 <- summary(emmeans(my_ref_grid, ~ Month, type = 'response'))
+```
+
+### full_gamm
+```{r}
+the_call <-  quote(gamm(log(Chl_Median) ~ Site + 
+                      ti(lPrecip) +
+                      ti(wlPrecip) + 
+                      ti(FlowIndex, by = Site) +
+                      ti(lPrecip,  wlPrecip) +
+                      ti(lPrecip, FlowIndex) +
+                      ti(wlPrecip, FlowIndex) +
+                      ti(lPrecip, wlPrecip, FlowIndex) +
+                      Month +
+                      Year + 
+                      Site:Year,
+                    correlation = corAR1(0.8),
+                    na.action = na.omit,
+                    method = 'REML',
+                    data = reduced_data))
+
+full_gamm$gam$call <- the_call
+
+my_ref_grid <- ref_grid(full_gamm,
+                        at = list(Year = 2014),
+                        cov.reduce = median)
+
+month.emm_gamm_3 <- summary(emmeans(my_ref_grid, ~ Month, type = 'response'))
+```
+
+## Compare Results
+###  Look at Correlations
+```{r}
+a <- cbind(month.emm_gls_1$response,
+      month.emm_gls_2$response,
+      month.emm_gls_2$response,
+      month.emm_gamm_1$response,
+      month.emm_gamm_2$response,
+      month.emm_gamm_3$response)
+colnames(a) <- c('GLS', 'Int_GLS', 'Hi_Flow_GLS',
+              'Simple_Gam', 'Int_GAM', 'Full_Gam')
+cor(a)
+```
+Results are HIGHLY correlated.
+
+### Look at Maximum Percent Differences
+```{r}
+as_tibble(a) %>%
+  mutate(Month = month.abb[3:12]) %>%
+  rowwise() %>%
+  mutate(m =  mean(c_across(GLS:Full_Gam)),
+         d =  max(m - (c_across(GLS:Full_Gam)))) %>%
+  summarize (Month = first(Month),
+             pct_dif = round(d/m,3) * 100,
+             .groups = 'drop')
+```
+
+Maximum differences never exceed 10% of the estimates.  While we don't show it
+here, the error bars of all estimates overlap.
+
+### Look at Graphic Comparison of Point Estimates
+```{r}
+as_tibble(a) %>%
+  mutate(Month = month.abb[3:12],
+         Month = factor(Month, levels = month.abb[3:12])) %>%
+  pivot_longer(-Month, names_to = 'Which', values_to = 'Value') %>%
+  ggplot(aes(x = Month, y = Value, color = Which)) +
+  geom_point() +
+  geom_line(aes(x = as.numeric(Month))) +
+  theme(axis.text.x = element_text(angle = 90, vjust = .25))
+```
+
+GLS models consistently estimate slightly higher marginal means than the GAMM
+models.  In general, adding more parameters to the model appears to flatten out
+differences between months.
+
+# Conclusion
+Any of these models does an adequate job of summarize our results.  There is
+value is sticking with simpler, faster to compute, easier to explain models.
+
+The simplest GAM model we explored appears to be the best compromise between 
+sophistication and simplicity.
+
+```{r}
+the_gls$call
+the_gamm$gam$call
+```
+
