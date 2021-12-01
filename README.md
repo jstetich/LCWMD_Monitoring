@@ -16,13 +16,13 @@ that manages water quality in the Long Creek watershed on behalf of about 130
 land owners.
 
 The Long Creek Watershed, a bit over two square miles in area, is dominated by
-commercial land use. The Maine Mall is one of the largest land owners in the
+commercial land use. The Maine Mall is one of the largest landowners in the
 watershed, and it is surrounded by a range of commercial businesses, from
-medical offices, to car washes.  About a third of the watershed in impervious
+medical offices, to car washes.  About a third of the watershed is impervious
 surfaces like roads, parking lots, and rooftops.  Landowners with an acre or
 more of impervious area are required to get a Clean Water Act permit for
 stormwater discharges from their property.  The LCWMD provides an alternative
-for landowners to working to receive an individual permit.  Landowners who elect
+for landowners to attain an individual permit.  Landowners who elect
 to participate in the The Long Creek Watershed Management District receive a
 General Permit, in return for providing funding to the District, and
 facilitating the work of the district by permitting access to their property for
@@ -64,8 +64,8 @@ graphical layouts.
 # Summary of Data Sources
 All data analyzed here is derived from data provided by GZA to LCWMD.  GZA has
 been the primary monitoring, data management, and data analysis contractor for
-the Long Creek Watershed Managament District for the last several years. GZA
-manages a large water quality data database on behalf of LCWMD. THe data
+the Long Creek Watershed Management District for the last several years. GZA
+manages a large water quality data database on behalf of LCWMD. Tee data
 provided constitutes a "snapshot" of the database as of mid 2019.
 
 GZA produced a series of detailed data analysis reports for LCWMD based on these 
